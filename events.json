@@ -1,0 +1,487 @@
+{
+    "data": [
+        {
+            "name": "Order Completed",
+            "id": 1
+        },
+        {
+            "name": "Order Canceled",
+            "id": 2
+        },
+        {
+            "name": "Order Refunded",
+            "id": 3
+        },
+        {
+            "name": "Product Purchased",
+            "id": 4
+        },
+        {
+            "name": "Product Reviewed",
+            "id": 5
+        },
+        {
+            "name": "Product Shared",
+            "id": 6
+        },
+        {
+            "name": "Product Added to Cart",
+            "id": 7
+        },
+        {
+            "name": "Product Removed from Cart",
+            "id": 8
+        },
+        {
+            "name": "Product Wishlisted",
+            "id": 9
+        },
+        {
+            "name": "Product Unwishlisted",
+            "id": 10
+        },
+        {
+            "name": "Product Comparison Started",
+            "id": 11
+        },
+        {
+            "name": "Product Comparison Completed",
+            "id": 12
+        },
+        {
+            "name": "Product Comparison Canceled",
+            "id": 13
+        },
+        {
+            "name": "Checkout Completed",
+            "id": 14
+        },
+        {
+            "name": "Checkout Started",
+            "id": 15
+        },
+        {
+            "name": "Product Added",
+            "id": 16
+        },
+        {
+            "name": "Product Viewed",
+            "id": 17
+        },
+        {
+            "name": "Product List Viewed",
+            "id": 18
+        },
+        {
+            "name": "Payment Info Entered",
+            "id": 19
+        },
+        {
+            "name": "User Registered",
+            "id": 20
+        },
+        {
+            "name": "Products Searched",
+            "id": 21
+        },
+        {
+            "name": "page",
+            "id": 22
+        },
+        {
+            "name": "User Login",
+            "id": 23
+        },
+        {
+            "name": "Product Added to Wishlist",
+            "id": 24
+        },
+        {
+            "name": "Product Removed from Wishlist",
+            "id": 25
+        },
+        {
+            "name": "Product Added to Cart",
+            "id": 26
+        },
+        {
+            "name": "Product Removed from Cart",
+            "id": 27
+        },
+        {
+            "name": "Product Added to Comparison",
+            "id": 28
+        },
+        {
+            "name": "Product Removed from Comparison",
+            "id": 29
+        },
+        {
+            "name": "Product Viewed in Comparison",
+            "id": 30
+        },
+        {
+            "name": "Product List Viewed in Comparison",
+            "id": 31
+        },
+        {
+            "name": "Product Comparison Started",
+            "id": 32
+        },
+        {
+            "name": "Product Comparison Completed",
+            "id": 33
+        },
+        {
+            "name": "Product Comparison Canceled",
+            "id": 34
+        },
+        {
+            "name": "Checkout Started",
+            "id": 35
+        },
+        {
+            "name": "Checkout Completed",
+            "id": 36
+        },
+        {
+            "name": "Payment Info Entered",
+            "id": 37
+        },
+        {
+            "name": "User Registered",
+            "id": 38
+        },
+        {
+            "name": "User Login",
+            "id": 39
+        },
+        {
+            "name": "User Logout",
+            "id": 40
+        },
+        {
+            "name": "User Profile Updated",
+            "id": 41
+        },
+        {
+            "name": "User Password Changed",
+            "id": 42
+        },
+        {
+            "name": "User Account Deleted",
+            "id": 43
+        },
+        {
+            "name": "User Account Reactivated",
+            "id": 44
+        },
+        {
+            "name": "User Account Deactivated",
+            "id": 45
+        },
+        {
+            "name": "User Account Suspended",
+            "id": 46
+        },
+        {
+            "name": "User Account Unsuspended",
+            "id": 47
+        },
+        {
+            "name": "User Account Locked",
+            "id": 48
+        },
+        {
+            "name": "User Account Unlocked",
+            "id": 49
+        },
+        {
+            "name": "User Account Verified",
+            "id": 50
+        },
+        {
+            "name": "User Account Unverified",
+            "id": 51
+        },
+        {
+            "name": "User Account Email Changed",
+            "id": 52
+        },
+        {
+            "name": "User Account Phone Number Changed",
+            "id": 53
+        },
+        {
+            "name": "User Account Address Changed",
+            "id": 54
+        },
+        {
+            "name": "User Account Preferences Changed",
+            "id": 55
+        },
+        {
+            "name": "User Account Notifications Changed",
+            "id": 56
+        },
+        {
+            "name": "User Account Subscriptions Changed",
+            "id": 57
+        },
+        {
+            "name": "User Account Payment Methods Changed",
+            "id": 58
+        },
+        {
+            "name": "User Account Billing Address Changed",
+            "id": 59
+        },
+        {
+            "name": "User Account Shipping Address Changed",
+            "id": 60
+        },
+        {
+            "name": "User Account Payment History Changed",
+            "id": 61
+        },
+        {
+            "name": "User Account Order History Changed",
+            "id": 62
+        },
+        {
+            "name": "User Account Wishlist Changed",
+            "id": 63
+        },
+        {
+            "name": "User Account Comparison List Changed",
+            "id": 64
+        },
+        {
+            "name": "User Account Cart Changed",
+            "id": 65
+        },
+        {
+            "name": "User Account Preferences Reset",
+            "id": 66
+        },
+        {
+            "name": "User Account Notifications Reset",
+            "id": 67
+        },
+        {
+            "name": "User Account Subscriptions Reset",
+            "id": 68
+        },
+        {
+            "name": "User Account Payment Methods Reset",
+            "id": 69
+        },
+        {
+            "name": "User Account Billing Address Reset",
+            "id": 70
+        },
+        {
+            "name": "User Account Shipping Address Reset",
+            "id": 71
+        },
+        {
+            "name": "User Account Payment History Reset",
+            "id": 72
+        },
+        {
+            "name": "User Account Order History Reset",
+            "id": 73
+        },
+        {
+            "name": "User Account Wishlist Reset",
+            "id": 74
+        },
+        {
+            "name": "User Account Comparison List Reset",
+            "id": 75
+        },
+        {
+            "name": "User Account Cart Reset",
+            "id": 76
+        },
+        {
+            "name": "User Account Preferences Cleared",
+            "id": 77
+        },
+        {
+            "name": "User Account Notifications Cleared",
+            "id": 78
+        },
+        {
+            "name": "User Account Subscriptions Cleared",
+            "id": 79
+        },
+        {
+            "name": "User Account Payment Methods Cleared",
+            "id": 80
+        },
+        {
+            "name": "User Account Billing Address Cleared",
+            "id": 81
+        },
+        {
+            "name": "User Account Shipping Address Cleared",
+            "id": 82
+        },
+        {
+            "name": "User Account Payment History Cleared",
+            "id": 83
+        },
+        {
+            "name": "User Account Order History Cleared",
+            "id": 84
+        },
+        {
+            "name": "User Account Wishlist Cleared",
+            "id": 85
+        },
+        {
+            "name": "User Account Comparison List Cleared",
+            "id": 86
+        },
+        {
+            "name": "User Account Cart Cleared",
+            "id": 87
+        },
+        {
+            "name": "User Account Preferences Deleted",
+            "id": 88
+        },
+        {
+            "name": "User Account Notifications Deleted",
+            "id": 89
+        },
+        {
+            "name": "User Account Subscriptions Deleted",
+            "id": 90
+        },
+        {
+            "name": "User Account Payment Methods Deleted",
+            "id": 91
+        },
+        {
+            "name": "User Account Billing Address Deleted",
+            "id": 92
+        },
+        {
+            "name": "User Account Shipping Address Deleted",
+            "id": 93
+        },
+        {
+            "name": "User Account Payment History Deleted",
+            "id": 94
+        },
+        {
+            "name": "User Account Order History Deleted",
+            "id": 95
+        },
+        {
+            "name": "User Account Wishlist Deleted",
+            "id": 96
+        },
+        {
+            "name": "User Account Comparison List Deleted",
+            "id": 97
+        },
+        {
+            "name": "User Account Cart Deleted",
+            "id": 98
+        },
+        {
+            "name": "User Account Preferences Archived",
+            "id": 99
+        },
+        {
+            "name": "User Account Notifications Archived",
+            "id": 100
+        },
+        {
+            "name": "User Account Subscriptions Archived",
+            "id": 101
+        },
+        {
+            "name": "User Account Payment Methods Archived",
+            "id": 102
+        },
+        {
+            "name": "User Account Billing Address Archived",
+            "id": 103
+        },
+        {
+            "name": "User Account Shipping Address Archived",
+            "id": 104
+        },
+        {
+            "name": "User Account Payment History Archived",
+            "id": 105
+        },
+        {
+            "name": "User Account Order History Archived",
+            "id": 106
+        },
+        {
+            "name": "User Account Wishlist Archived",
+            "id": 107
+        },
+        {
+            "name": "User Account Comparison List Archived",
+            "id": 108
+        },
+        {
+            "name": "User Account Cart Archived",
+            "id": 109
+        },
+        {
+            "name": "User Account Preferences Restored",
+            "id": 110
+        },
+        {
+            "name": "User Account Notifications Restored",
+            "id": 111
+        },
+        {
+            "name": "User Account Subscriptions Restored",
+            "id": 112
+        },
+        {
+            "name": "User Account Payment Methods Restored",
+            "id": 113
+        },
+        {
+            "name": "User Account Billing Address Restored",
+            "id": 114
+        },
+        {
+            "name": "User Account Shipping Address Restored",
+            "id": 115
+        },
+        {
+            "name": "User Account Payment History Restored",
+            "id": 116
+        },
+        {
+            "name": "User Account Order History Restored",
+            "id": 117
+        },
+        {
+            "name": "User Account Wishlist Restored",
+            "id": 118
+        },
+        {
+            "name": "User Account Comparison List Restored",
+            "id": 119
+        },
+        {
+            "name": "User Account Cart Restored",
+            "id": 120
+        }
+    ],
+    "meta": {
+        "total": 120
+    }
+}

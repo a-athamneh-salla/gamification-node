@@ -1,0 +1,22 @@
+name = "salla-gamification"
+main = "src/index.ts"
+compatibility_date = "2023-10-30"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 Database configuration
+[[d1_databases]]
+binding = "GAMIFICATION_DB"
+database_name = "salla_gamification"
+database_id = "placeholder-db-id" # Replace this with your actual D1 database ID
+
+# Environment variables
+[vars]
+ENVIRONMENT = "development"
+
+# Development configuration
+[env.development]
+vars = { ENVIRONMENT = "development" }
+
+# Production configuration
+[env.production]
+vars = { ENVIRONMENT = "production" }
