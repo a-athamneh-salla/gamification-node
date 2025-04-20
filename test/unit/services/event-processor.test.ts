@@ -1,4 +1,3 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { EventProcessorService } from '../../../src/services/event-processor';
 import { EventRepository } from '../../../src/repositories/event-repository';
 import { TaskRepository } from '../../../src/repositories/task-repository';

@@ -3,6 +3,8 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { TaskService } from '../services/task-service';
 import { DB } from '../db';
+import { TaskStatus } from '../types';
+import { tasks } from '../db/schema';
 
 // Create the tasks router
 export const taskRoutes = new Hono<{
@@ -20,7 +22,8 @@ taskRoutes.get('/', async (c) => {
     const db = c.get('db');
     const storeId = parseInt(c.req.query('store_id') || '0');
     const status = c.req.query('status') || 'all';
-    const missionId = c.req.query('mission_id') ? parseInt(c.req.query('mission_id')) : undefined;
+    const missionIdStr = c.req.query('mission_id');
+    const missionId = missionIdStr ? parseInt(missionIdStr) : undefined;
     const page = parseInt(c.req.query('page') || '1');
     const limit = parseInt(c.req.query('limit') || '20');
     
@@ -32,10 +35,11 @@ taskRoutes.get('/', async (c) => {
     }
     
     const taskService = new TaskService(db);
+    const statusParam = status === 'all' ? 'all' : status as TaskStatus;
     const { tasks, total } = await taskService.getTasksByStore(
-      storeId, 
-      status, 
-      missionId, 
+      storeId,
+      missionId,
+      statusParam,
       page, 
       limit
     );
@@ -200,16 +204,23 @@ taskRoutes.post('/', zValidator('json', createTaskSchema), async (c) => {
     // This would typically have authentication/authorization checks
     // to ensure only admin users can create tasks
     
-    const result = await db.insert(db.tasks).values({
+    // Make sure to parse the event_id as a number
+    const eventId = parseInt(data.event_id);
+    if (isNaN(eventId)) {
+      return c.json({
+        success: false,
+        message: 'Invalid event ID'
+      }, 400);
+    }
+    
+    const result = await db.insert(tasks).values({
       missionId: data.mission_id,
       name: data.name,
       description: data.description,
       points: data.points,
-      eventId: data.event_id,
+      eventId: eventId,
       isOptional: data.is_optional,
-      isActive: data.is_active,
-      unlockCondition: data.unlock_condition,
-      position: data.position || 0
+      order: data.position || 0
     }).returning();
     
     return c.json({

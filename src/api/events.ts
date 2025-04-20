@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { EventProcessor } from '../services/event-processor';
+import { EventProcessorService as EventProcessor } from '../services/event-processor';
 import { EventRepository } from '../repositories/event-repository';
 import { DB } from '../db';
+import { events } from '../db/schema';
 import { EventPayload } from '../types';
 
 // Create the events router
@@ -150,7 +151,7 @@ eventRoutes.post('/register', zValidator('json', createEventSchema), async (c) =
       }, 409);
     }
     
-    const result = await db.insert(db.events).values({
+    const result = await db.insert(events).values({
       name: data.name,
       description: data.description
     }).returning();

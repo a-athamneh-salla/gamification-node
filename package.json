@@ -25,8 +25,9 @@
   "author": "Salla Platform Team",
   "license": "UNLICENSED",
   "dependencies": {
-    "hono": "^3.10.0",
+    "@hono/zod-validator": "^0.4.3",
     "drizzle-orm": "^0.28.0",
+    "hono": "^3.10.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {

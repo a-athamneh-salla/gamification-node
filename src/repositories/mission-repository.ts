@@ -106,10 +106,11 @@ export class MissionRepository extends BaseRepository<Mission> {
       .offset(offset);
 
     // Count total missions matching the criteria
-    const countResult = await this.db
+    const totalCount = await this.db
       .select({ count: sql`count(*)` })
       .from(missions)
-      .where(conditions);
+      .where(conditions)
+      .then(res => Number(res[0].count));
 
     // Now fetch the tasks for each mission
     const missionIds = result.map(r => r.mission.id);
@@ -159,7 +160,7 @@ export class MissionRepository extends BaseRepository<Mission> {
 
     return {
       missions: filteredMissions,
-      total: filteredMissions.length
+      total: status === 'all' ? totalCount : filteredMissions.length
     };
   }
 

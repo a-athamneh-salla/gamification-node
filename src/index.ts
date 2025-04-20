@@ -3,8 +3,9 @@ import { cors } from 'hono/cors';
 import { prettyJSON } from 'hono/pretty-json';
 import { logger } from 'hono/logger';
 
-import { initializeDb, runMigrations } from './db';
+import { initializeDb } from './db';
 import { apiRoutes } from './api';
+import { DB } from './db';
 
 // Define environment variables and bindings interface
 type Bindings = {
@@ -12,8 +13,12 @@ type Bindings = {
   DB: D1Database;
 }
 
+type Variables = {
+  db: DB;
+}
+
 // Create the Hono app
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // Register middleware
 app.use('*', logger());
@@ -35,12 +40,8 @@ app.get('/health', (c) => {
   });
 });
 
-// Run migrations on each worker initialization
+// Initialize DB on each request
 app.use('*', async (c, next) => {
-  if (c.env.ENVIRONMENT !== 'production') {
-    await runMigrations(c.env.DB);
-  }
-  
   // Add DB instance to the context variables
   c.set('db', initializeDb(c.env.DB));
   

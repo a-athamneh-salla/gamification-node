@@ -3,6 +3,8 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { RewardService } from '../services/reward-service';
 import { DB } from '../db';
+import { RewardStatus } from '../types';
+import { rewards } from '../db/schema';
 
 // Create the rewards router
 export const rewardRoutes = new Hono<{
@@ -31,7 +33,8 @@ rewardRoutes.get('/', async (c) => {
     }
     
     const rewardService = new RewardService(db);
-    const { rewards, total } = await rewardService.getRewardsByStore(storeId, status, page, limit);
+    const statusParam = status === 'all' ? 'all' : status as RewardStatus;
+    const { rewards, total } = await rewardService.getRewardsByStore(storeId, statusParam, page, limit);
     
     return c.json({
       success: true,
@@ -171,7 +174,7 @@ rewardRoutes.post('/', zValidator('json', createRewardSchema), async (c) => {
     // This would typically have authentication/authorization checks
     // to ensure only admin users can create rewards
     
-    const result = await db.insert(db.rewards).values({
+    const result = await db.insert(rewards).values({
       missionId: data.mission_id,
       rewardTypeId: data.reward_type_id,
       name: data.name,

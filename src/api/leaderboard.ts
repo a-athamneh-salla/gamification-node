@@ -20,11 +20,11 @@ leaderboardRoutes.get('/', async (c) => {
     const limit = parseInt(c.req.query('limit') || '10');
     
     const leaderboardService = new LeaderboardService(db);
-    const { items, total } = await leaderboardService.getLeaderboard(page, limit);
+    const { entries, total } = await leaderboardService.getLeaderboard(page, limit);
     
     return c.json({
       success: true,
-      data: items,
+      data: entries,
       pagination: {
         page,
         limit,

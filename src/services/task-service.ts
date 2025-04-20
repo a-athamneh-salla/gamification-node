@@ -1,20 +1,57 @@
 import { DB } from '../db';
 import { TaskRepository } from '../repositories/task-repository';
 import { MissionRepository } from '../repositories/mission-repository';
+import { Task, TaskStatus, TaskWithProgress } from '../types';
 
 /**
  * Task Service
  * Handles business logic for tasks
  */
 export class TaskService {
-  private db: DB;
   private taskRepository: TaskRepository;
   private missionRepository: MissionRepository;
 
   constructor(db: DB) {
-    this.db = db;
     this.taskRepository = new TaskRepository(db);
     this.missionRepository = new MissionRepository(db);
+  }
+
+  /**
+   * Get tasks for a specific store with pagination
+   * @param storeId Store ID
+   * @param missionId Optional mission ID filter
+   * @param status Optional status filter
+   * @param page Page number (1-based)
+   * @param limit Items per page
+   * @returns Object with tasks and total count
+   */
+  async getTasksByStore(
+    storeId: number,
+    missionId?: number,
+    status?: TaskStatus | 'all',
+    page: number = 1,
+    limit: number = 10
+  ): Promise<{ tasks: TaskWithProgress[]; total: number }> {
+    return this.taskRepository.findByStore(storeId, missionId, status, page, limit);
+  }
+
+  /**
+   * Get task with detailed progress for a store
+   * @param storeId Store ID
+   * @param taskId Task ID
+   * @returns Task with progress information or null if not found
+   */
+  async getTaskWithProgress(storeId: number, taskId: number): Promise<TaskWithProgress | null> {
+    return this.taskRepository.findByIdForStore(storeId, taskId);
+  }
+
+  /**
+   * Get a task by ID (without store context)
+   * @param taskId Task ID
+   * @returns Task or null if not found
+   */
+  async getTaskById(taskId: number): Promise<Task | null> {
+    return this.taskRepository.findById(taskId);
   }
 
   /**
@@ -78,22 +115,19 @@ export class TaskService {
         const tasks = mission.tasks || [];
         
         // Count completed and skipped tasks
-        const completedOrSkippedTasks = tasks.filter(t => 
+        const completedOrSkippedTasks = tasks.filter((t: any) => 
           t.status === 'completed' || t.status === 'skipped' || t.isOptional
         ).length;
         
         // If all tasks are now completed/skipped, mark mission as completed
         if (completedOrSkippedTasks === tasks.length) {
-          // Calculate points earned from completed (not skipped) tasks
-          const pointsEarned = tasks.reduce((sum, t) => {
+          // Calculate total points earned (for record-keeping only)
+          tasks.reduce((sum: number, t: any) => {
             if (t.status === 'completed') {
               return sum + t.points;
             }
             return sum;
           }, 0);
-          
-          // Update mission progress in a separate function or repository
-          // This is simplified for now - you would typically update the mission progress here
         }
       }
       
@@ -120,6 +154,6 @@ export class TaskService {
     const tasks = await this.taskRepository.findByMissionForStore(storeId, missionId);
     
     // Sort tasks by order
-    return tasks.sort((a, b) => a.order - b.order);
+    return tasks.sort((a: any, b: any) => a.order - b.order);
   }
 }

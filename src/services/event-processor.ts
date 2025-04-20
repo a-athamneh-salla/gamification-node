@@ -2,9 +2,9 @@ import { DB } from '../db';
 import { EventRepository } from '../repositories/event-repository';
 import { TaskRepository } from '../repositories/task-repository';
 import { MissionRepository } from '../repositories/mission-repository';
-import { eventLogs } from '../db/schema';
+import { eventLogs, storeMissionProgress } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
-import { EventPayload } from '../types';
+import { EventPayload, MissionStatus } from '../types';
 
 /**
  * Event Processor Service
@@ -55,10 +55,19 @@ export class EventProcessorService {
   async processEvent(payload: EventPayload): Promise<{
     tasks_completed: string[];
     missions_completed: string[];
+    taskUpdates?: any[];
+    missionUpdates?: any[];
+    rewardUpdates?: any[];
   }> {
     // If iteration confirmation is required and hasn't been confirmed, return early
     if (!this.iterationConfirmed) {
-      return { tasks_completed: [], missions_completed: [] };
+      return { 
+        tasks_completed: [], 
+        missions_completed: [],
+        taskUpdates: [],
+        missionUpdates: [],
+        rewardUpdates: []
+      };
     }
 
     try {
@@ -74,11 +83,17 @@ export class EventProcessorService {
       // Find tasks associated with this event
       const tasks = await this.taskRepository.findByEventId(event.id);
       if (!tasks.length) {
-        return { tasks_completed: [], missions_completed: [] };
+        return { 
+          tasks_completed: [], 
+          missions_completed: [],
+          taskUpdates: [],
+          missionUpdates: [],
+          rewardUpdates: [] 
+        };
       }
 
       const completedTaskIds: string[] = [];
-      const completedMissionIds: string[] = new Set<string>();
+      const completedMissionIds = new Set<string>();
 
       // Process tasks and update their completion status
       for (const task of tasks) {
@@ -107,11 +122,11 @@ export class EventProcessorService {
             // Check if all required tasks are completed
             const tasks = mission.tasks || [];
             const completedTasks = tasks.filter(
-              t => t.status === 'completed' || t.isOptional
+              (t: any) => t.status === 'completed' || t.isOptional
             );
 
             // Calculate points earned
-            const pointsEarned = tasks.reduce((sum, t) => {
+            const pointsEarned = tasks.reduce((sum: number, t: any) => {
               if (t.status === 'completed') {
                 return sum + t.points;
               }
@@ -142,7 +157,10 @@ export class EventProcessorService {
 
       return {
         tasks_completed: completedTaskIds,
-        missions_completed: Array.from(completedMissionIds)
+        missions_completed: Array.from(completedMissionIds),
+        taskUpdates: [],
+        missionUpdates: [],
+        rewardUpdates: []
       };
     } catch (error) {
       console.error('Error processing event:', error);
@@ -183,13 +201,13 @@ export class EventProcessorService {
     storeId: number,
     missionId: number,
     pointsEarned: number,
-    status: 'not_started' | 'in_progress' | 'completed'
+    status: MissionStatus
   ): Promise<any> {
     // Check if progress entry exists
     const existingProgress = await this.db.query.storeMissionProgress.findFirst({
       where: and(
-        eq(this.db.query.storeMissionProgress.storeId, storeId),
-        eq(this.db.query.storeMissionProgress.missionId, missionId)
+        eq(storeMissionProgress.storeId, storeId),
+        eq(storeMissionProgress.missionId, missionId)
       )
     });
     
@@ -198,7 +216,7 @@ export class EventProcessorService {
     if (existingProgress) {
       // Update existing progress
       const result = await this.db
-        .update(this.db.query.storeMissionProgress)
+        .update(storeMissionProgress)
         .set({
           pointsEarned,
           status,
@@ -207,8 +225,8 @@ export class EventProcessorService {
         })
         .where(
           and(
-            eq(this.db.query.storeMissionProgress.storeId, storeId),
-            eq(this.db.query.storeMissionProgress.missionId, missionId)
+            eq(storeMissionProgress.storeId, storeId),
+            eq(storeMissionProgress.missionId, missionId)
           )
         )
         .returning();
@@ -217,7 +235,7 @@ export class EventProcessorService {
     } else {
       // Create new progress entry
       const result = await this.db
-        .insert(this.db.query.storeMissionProgress)
+        .insert(storeMissionProgress)
         .values({
           storeId,
           missionId,
@@ -247,15 +265,6 @@ export class EventProcessorService {
    * @returns True if the system is set to continue iterations, false otherwise
    */
   public isIterationConfirmed(): boolean {
-    return this.iterationConfirmed;
-  }
-
-  /**
-   * Reset the iteration confirmation to default (true)
-   * @returns True indicating the default confirmation state
-   */
-  public resetIterationConfirmation(): boolean {
-    this.iterationConfirmed = true;
     return this.iterationConfirmed;
   }
 }

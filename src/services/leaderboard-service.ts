@@ -1,7 +1,7 @@
 import { DB } from '../db';
-import { eq, sql, desc } from 'drizzle-orm';
+import { eq, sql, desc, lt, gt } from 'drizzle-orm';
 import { leaderboard } from '../db/schema';
-import { LeaderboardEntry } from '../types';
+import { LeaderboardContextResult, LeaderboardEntry, LeaderboardRecalculationResult, LeaderboardStats } from '../types';
 
 /**
  * Leaderboard Service
@@ -43,6 +43,126 @@ export class LeaderboardService {
       entries: result as LeaderboardEntry[],
       total: Number(countResult[0].count)
     };
+  }
+
+  /**
+   * Get a store's position in the leaderboard with surrounding stores
+   * @param storeId Store ID
+   * @param context Number of entries to show above and below the store's position
+   * @returns Store position with context
+   */
+  async getLeaderboardPositionWithContext(
+    storeId: number,
+    context: number = 3
+  ): Promise<LeaderboardContextResult> {
+    // Get the store's entry
+    const storeEntry = await this.getStoreRanking(storeId);
+    
+    if (!storeEntry) {
+      return {
+        success: false,
+        message: `Store ${storeId} not found in leaderboard`
+      };
+    }
+    
+    // Get entries above the store's position
+    const storesAbove = await this.db
+      .select()
+      .from(leaderboard)
+      .where(gt(leaderboard.totalPoints, storeEntry.totalPoints))
+      .orderBy(desc(leaderboard.totalPoints))
+      .limit(context);
+    
+    // Get entries below the store's position
+    const storesBelow = await this.db
+      .select()
+      .from(leaderboard)
+      .where(lt(leaderboard.totalPoints, storeEntry.totalPoints))
+      .orderBy(desc(leaderboard.totalPoints))
+      .limit(context);
+    
+    // Count total stores
+    const countResult = await this.db
+      .select({ count: sql`count(*)` })
+      .from(leaderboard);
+    
+    return {
+      success: true,
+      message: 'Leaderboard position retrieved successfully',
+      storePosition: storeEntry,
+      storesAbove: storesAbove as LeaderboardEntry[],
+      storesBelow: storesBelow as LeaderboardEntry[],
+      totalStores: Number(countResult[0].count)
+    };
+  }
+
+  /**
+   * Get leaderboard statistics
+   * @returns Leaderboard statistics
+   */
+  async getLeaderboardStatistics(): Promise<LeaderboardStats> {
+    // Count total stores
+    const countResult = await this.db
+      .select({ count: sql`count(*)` })
+      .from(leaderboard);
+    
+    // Get top score
+    const topScoreResult = await this.db
+      .select({ max: sql`MAX(total_points)` })
+      .from(leaderboard);
+    
+    // Get average score
+    const avgScoreResult = await this.db
+      .select({ avg: sql`AVG(total_points)` })
+      .from(leaderboard);
+    
+    // Get total missions completed
+    const missionsResult = await this.db
+      .select({ sum: sql`SUM(completed_missions)` })
+      .from(leaderboard);
+    
+    // Get total tasks completed
+    const tasksResult = await this.db
+      .select({ sum: sql`SUM(completed_tasks)` })
+      .from(leaderboard);
+    
+    return {
+      totalStores: Number(countResult[0].count),
+      topScore: Number(topScoreResult[0].max) || 0,
+      averageScore: Math.round(Number(avgScoreResult[0].avg) || 0),
+      totalMissionsCompleted: Number(missionsResult[0].sum) || 0,
+      totalTasksCompleted: Number(tasksResult[0].sum) || 0,
+      lastUpdated: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Recalculate the entire leaderboard
+   * This forces a full recalculation of all ranks and positions
+   * @returns Result of the recalculation operation
+   */
+  async recalculateLeaderboard(): Promise<LeaderboardRecalculationResult> {
+    try {
+      await this.recalculateRankings();
+      
+      // Count number of stores affected
+      const countResult = await this.db
+        .select({ count: sql`count(*)` })
+        .from(leaderboard);
+      
+      return {
+        success: true,
+        message: 'Leaderboard successfully recalculated',
+        storesUpdated: Number(countResult[0].count)
+      };
+    } catch (error: any) {
+      console.error('Error recalculating leaderboard:', error);
+      return {
+        success: false,
+        message: `Error recalculating leaderboard: ${error.message}`,
+        storesUpdated: 0
+      };
+    }
   }
 
   /**

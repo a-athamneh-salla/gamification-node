@@ -45,4 +45,4 @@ api.route('/tasks', taskRoutes);
 api.route('/rewards', rewardRoutes);
 api.route('/leaderboard', leaderboardRoutes);
 
-export { api };
+export { api, api as apiRoutes };

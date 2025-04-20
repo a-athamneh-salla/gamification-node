@@ -3,7 +3,8 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { MissionService } from '../services/mission-service';
 import { DB } from '../db';
-import { MissionTargetType } from '../types';
+import { MissionStatus, MissionTargetType } from '../types';
+import { missions } from '../db/schema';
 
 // Create the missions router
 export const missionRoutes = new Hono<{
@@ -32,7 +33,8 @@ missionRoutes.get('/', async (c) => {
     }
     
     const missionService = new MissionService(db);
-    const { missions, total } = await missionService.getMissionsByStore(storeId, status, page, limit);
+    const statusParam = status === 'all' ? 'all' : status as MissionStatus;
+    const { missions, total } = await missionService.getMissionsByStore(storeId, statusParam, page, limit);
     
     return c.json({
       success: true,
@@ -129,7 +131,7 @@ missionRoutes.post('/', zValidator('json', createMissionSchema), async (c) => {
     // This would typically have authentication/authorization checks
     // to ensure only admin users can create missions
     
-    const result = await db.insert(db.missions).values({
+    const result = await db.insert(missions).values({
       name: data.name,
       description: data.description,
       pointsRequired: data.points_required,

@@ -1,6 +1,5 @@
 import { DB } from '../db';
 import { MissionRepository } from '../repositories/mission-repository';
-import { TaskRepository } from '../repositories/task-repository';
 import { MissionStatus, MissionWithTasks } from '../types';
 
 /**
@@ -8,14 +7,10 @@ import { MissionStatus, MissionWithTasks } from '../types';
  * Handles business logic for missions
  */
 export class MissionService {
-  private db: DB;
   private missionRepository: MissionRepository;
-  private taskRepository: TaskRepository;
 
   constructor(db: DB) {
-    this.db = db;
     this.missionRepository = new MissionRepository(db);
-    this.taskRepository = new TaskRepository(db);
   }
 
   /**
@@ -49,9 +44,47 @@ export class MissionService {
     }
     
     // Ensure tasks are ordered correctly
-    mission.tasks = mission.tasks.sort((a, b) => a.order - b.order);
+    mission.tasks = mission.tasks.sort((a: any, b: any) => a.order - b.order);
     
     return mission;
+  }
+
+  /**
+   * Get mission with tasks and progress for a store
+   * @param storeId Store ID
+   * @param missionId Mission ID
+   * @returns Detailed mission information with tasks and progress
+   */
+  async getMissionWithTasksAndProgress(storeId: number, missionId: number): Promise<MissionWithTasks | null> {
+    return this.getMissionById(storeId, missionId);
+  }
+
+  /**
+   * Get tasks associated with a mission for a store
+   * @param storeId Store ID
+   * @param missionId Mission ID
+   * @returns Array of tasks with progress information
+   */
+  async getMissionTasks(storeId: number, missionId: number): Promise<any[]> {
+    const mission = await this.getMissionById(storeId, missionId);
+    if (!mission) {
+      return [];
+    }
+    return mission.tasks || [];
+  }
+
+  /**
+   * Get rewards associated with a mission for a store
+   * @param storeId Store ID
+   * @param missionId Mission ID
+   * @returns Array of rewards with status information
+   */
+  async getMissionRewards(storeId: number, missionId: number): Promise<any[]> {
+    const mission = await this.getMissionById(storeId, missionId);
+    if (!mission) {
+      return [];
+    }
+    return mission.rewards || [];
   }
 
   /**
@@ -100,7 +133,6 @@ export class MissionService {
     
     if (mission.targetType === 'filtered' && mission.targetStores) {
       try {
-        const filterConditions = JSON.parse(mission.targetStores);
         // Here you would apply filter logic based on store attributes
         // This is a placeholder - actual implementation would depend on your filtering requirements
         return true;
@@ -157,10 +189,10 @@ export class MissionService {
     }
     
     const tasks = mission.tasks || [];
-    const completedTasks = tasks.filter(t => t.status === 'completed').length;
+    const completedTasks = tasks.filter((t: any) => t.status === 'completed').length;
     const totalTasks = tasks.length;
-    const totalPoints = tasks.reduce((sum, task) => sum + task.points, 0);
-    const pointsEarned = tasks.reduce((sum, task) => {
+    const totalPoints = tasks.reduce((sum: number, task: any) => sum + task.points, 0);
+    const pointsEarned = tasks.reduce((sum: number, task: any) => {
       return task.status === 'completed' ? sum + task.points : sum;
     }, 0);
     

@@ -262,7 +262,7 @@ export class TaskRepository extends BaseRepository<Task> {
    * @param taskId Task ID
    * @returns Task with event details or null if not found
    */
-  async getTaskWithEvent(taskId: number): Promise<(Task & { event: any }) | null> {
+  async getTaskWithEvent(taskId: number): Promise<Task | null> {
     const result = await this.db
       .select({
         task: tasks,
@@ -277,9 +277,84 @@ export class TaskRepository extends BaseRepository<Task> {
       return null;
     }
 
+    const { task, event } = result[0];
+    // Merge the task data with event in a format that matches the Task type
     return {
-      ...result[0].task as Task,
-      event: result[0].event
+      ...task as Task,
+      event: event
+    } as Task;
+  }
+
+  /**
+   * Find tasks for a store with optional filtering and pagination
+   * @param storeId Store ID
+   * @param missionId Optional mission ID filter
+   * @param status Optional task status filter
+   * @param page Page number (1-based)
+   * @param limit Items per page
+   * @returns Object with tasks array and total count
+   */
+  async findByStore(
+    storeId: number,
+    missionId?: number,
+    status: TaskStatus | 'all' = 'all',
+    page: number = 1,
+    limit: number = 10
+  ): Promise<{ tasks: TaskWithProgress[], total: number }> {
+    const { offset, limit: limitParam } = this.getPaginationParams(page, limit);
+    
+    // Start building the query
+    let query = this.db
+      .select({
+        task: tasks,
+        progress: storeTaskProgress
+      })
+      .from(tasks)
+      .leftJoin(
+        storeTaskProgress, 
+        and(
+          eq(storeTaskProgress.taskId, tasks.id),
+          eq(storeTaskProgress.storeId, storeId)
+        )
+      );
+    
+    // Add mission filter if provided
+    if (missionId) {
+      query = query.where(eq(tasks.missionId, missionId));
+    }
+    
+    // Add status filter if provided and not 'all'
+    if (status !== 'all') {
+      query = query.where(eq(storeTaskProgress.status, status));
+    }
+    
+    // Execute the query with pagination
+    const result = await query
+      .orderBy(tasks.missionId, tasks.order)
+      .limit(limitParam)
+      .offset(offset);
+    
+    // Count total tasks matching the criteria
+    const countQuery = this.db.select({ count: sql`count(*)` }).from(tasks);
+    
+    // Apply the same filters to count query
+    if (missionId) {
+      countQuery.where(eq(tasks.missionId, missionId));
+    }
+    
+    const countResult = await countQuery;
+    
+    // Format the tasks for response
+    const formattedTasks = result.map(({ task, progress }) => ({
+      ...task as Task,
+      status: progress?.status || 'not_started',
+      completedAt: progress?.completedAt,
+      skippedAt: progress?.skippedAt
+    })) as TaskWithProgress[];
+    
+    return {
+      tasks: formattedTasks,
+      total: Number(countResult[0].count)
     };
   }
 }

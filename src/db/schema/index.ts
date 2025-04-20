@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // Events table schema
@@ -21,7 +21,7 @@ export const missions = sqliteTable('missions', {
   endDate: text('end_date'),
   isRecurring: integer('is_recurring', { mode: 'boolean' }).notNull().default(false),
   recurrencePattern: text('recurrence_pattern'),
-  prerequisiteMissionId: integer('prerequisite_mission_id').references(() => missions.id),
+  prerequisiteMissionId: integer('prerequisite_mission_id').references((): any => missions.id),
   targetType: text('target_type', { enum: ['all', 'specific', 'filtered'] }).notNull().default('all'),
   targetStores: text('target_stores'), // JSON string of target store IDs or filter criteria
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -74,10 +74,6 @@ export const storeMissionProgress = sqliteTable('store_mission_progress', {
   completedAt: text('completed_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
-}, (table) => {
-  return {
-    storeIdMissionIdIdx: primaryKey({ columns: [table.storeId, table.missionId] })
-  };
 });
 
 // Store task progress table schema
@@ -90,10 +86,6 @@ export const storeTaskProgress = sqliteTable('store_task_progress', {
   skippedAt: text('skipped_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
-}, (table) => {
-  return {
-    storeIdTaskIdIdx: primaryKey({ columns: [table.storeId, table.taskId] })
-  };
 });
 
 // Store rewards table schema
@@ -107,10 +99,6 @@ export const storeRewards = sqliteTable('store_rewards', {
   expiresAt: text('expires_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
-}, (table) => {
-  return {
-    storeIdRewardIdIdx: primaryKey({ columns: [table.storeId, table.rewardId] })
-  };
 });
 
 // Event logs table schema

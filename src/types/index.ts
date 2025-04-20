@@ -90,6 +90,22 @@ export interface Mission {
 }
 
 /**
+ * Mission with tasks and progress information
+ */
+export interface MissionWithTasks extends Mission {
+  tasks: Task[];
+}
+
+/**
+ * Task with detailed progress information
+ */
+export interface TaskWithProgress extends Task {
+  event: Event;
+  status: TaskStatus;
+  progress?: number;
+}
+
+/**
  * Reward type definition
  */
 export interface RewardType {

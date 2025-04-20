@@ -1,5 +1,4 @@
 import { drizzle, DrizzleD1Database } from 'drizzle-orm/d1';
-import { migrate } from 'drizzle-orm/d1/migrator';
 import * as schema from './schema';
 
 /**
@@ -18,11 +17,13 @@ export function initializeDb(d1Database: D1Database): DB {
 
 /**
  * Run database migrations
- * @param d1Database Cloudflare D1 database binding
  */
-export async function runMigrations(d1Database: D1Database): Promise<void> {
-  const db = drizzle(d1Database);
-  console.log('Running database migrations...');
-  await migrate(db, { migrationsFolder: 'migrations' });
-  console.log('Migrations completed successfully.');
+export async function runMigrations(): Promise<void> {
+  // In Cloudflare Workers environment, migrations should be applied using Wrangler CLI
+  // This is a placeholder that logs information but doesn't try to run migrations at runtime
+  console.log('In production, migrations should be applied using: wrangler d1 migrations apply GAMIFICATION_DB');
+  console.log('For development, use: pnpm run setup-db');
+  
+  // For development environment, you can use the existing script: pnpm run setup-db
+  // which runs: wrangler d1 migrations apply GAMIFICATION_DB
 }

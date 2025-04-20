@@ -6,8 +6,8 @@ compatibility_flags = ["nodejs_compat"]
 # D1 Database configuration
 [[d1_databases]]
 binding = "GAMIFICATION_DB"
-database_name = "salla_gamification"
-database_id = "placeholder-db-id" # Replace this with your actual D1 database ID
+database_name = "gamification"
+database_id = "cc10cf75-35c2-461a-a838-2488e6cfc424"
 
 # Environment variables
 [vars]

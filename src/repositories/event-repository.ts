@@ -14,6 +14,18 @@ export class EventRepository extends BaseRepository<Event> {
   }
 
   /**
+   * Get all events without pagination
+   * @returns Array of all events
+   */
+  async getAllEvents(): Promise<Event[]> {
+    const result = await this.db
+      .select()
+      .from(events);
+
+    return result as Event[];
+  }
+
+  /**
    * Find event by ID
    * @param id Event ID
    * @returns Event or null if not found
@@ -29,6 +41,15 @@ export class EventRepository extends BaseRepository<Event> {
   }
 
   /**
+   * Get event by ID - alias for findById
+   * @param id Event ID
+   * @returns Event or null if not found
+   */
+  async getEventById(id: number): Promise<Event | null> {
+    return this.findById(id);
+  }
+
+  /**
    * Find event by name
    * @param name Event name
    * @returns Event or null if not found
@@ -41,6 +62,15 @@ export class EventRepository extends BaseRepository<Event> {
       .limit(1);
 
     return result.length ? result[0] as Event : null;
+  }
+
+  /**
+   * Get event by name - alias for findByName
+   * @param name Event name
+   * @returns Event or null if not found
+   */
+  async getEventByName(name: string): Promise<Event | null> {
+    return this.findByName(name);
   }
 
   /**
