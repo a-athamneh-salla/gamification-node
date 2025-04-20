@@ -1,0 +1,126 @@
+openapi: 3.0.0
+info:
+  title: Salla Gamification System API
+  description: API documentation for the Salla Gamification System.
+  version: 1.0.0
+servers:
+  - url: https://api.salla.sa/gamification
+    description: Production server
+  - url: https://staging.api.salla.sa/gamification
+    description: Staging server
+paths:
+  /events:
+    post:
+      summary: Receive events from Jitsu
+      description: Endpoint to receive events from Salla via Jitsu.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event:
+                  type: string
+                  description: The event name.
+                payload:
+                  type: object
+                  description: The event payload.
+      responses:
+        '200':
+          description: Event processed successfully.
+        '400':
+          description: Invalid event data.
+  /missions:
+    get:
+      summary: Get available missions
+      description: Retrieve a list of available missions for the merchant.
+      responses:
+        '200':
+          description: A list of missions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Mission'
+  /tasks:
+    get:
+      summary: Get available tasks
+      description: Retrieve a list of available tasks for the merchant.
+      responses:
+        '200':
+          description: A list of tasks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+  /rewards:
+    get:
+      summary: Get earned rewards
+      description: Retrieve a list of rewards earned by the merchant.
+      responses:
+        '200':
+          description: A list of rewards.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reward'
+    post:
+      summary: Claim a reward
+      description: Endpoint to claim a specific reward.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rewardId:
+                  type: string
+                  description: The ID of the reward to claim.
+      responses:
+        '200':
+          description: Reward claimed successfully.
+        '400':
+          description: Invalid reward ID.
+components:
+  schemas:
+    Mission:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        pointsRequired:
+          type: integer
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        points:
+          type: integer
+    Reward:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [badge, coupon, subscription_benefit, leaderboard_position]
