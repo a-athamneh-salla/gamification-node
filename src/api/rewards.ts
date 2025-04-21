@@ -159,7 +159,8 @@ const createRewardSchema = z.object({
   reward_type_id: z.number().int().positive(),
   name: z.string().min(1),
   description: z.string().optional(),
-  value: z.string() // JSON string containing reward details
+  value: z.string(), // JSON string containing reward details
+  game_id: z.number().int().positive() // Added game_id field
 });
 
 /**
@@ -176,6 +177,7 @@ rewardRoutes.post('/', zValidator('json', createRewardSchema), async (c) => {
     
     const result = await db.insert(rewards).values({
       missionId: data.mission_id,
+      gameId: data.game_id,
       rewardTypeId: data.reward_type_id,
       name: data.name,
       description: data.description,

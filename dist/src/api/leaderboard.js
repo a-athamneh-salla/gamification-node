@@ -2,20 +2,27 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.leaderboardRoutes = void 0;
 const hono_1 = require("hono");
-const leaderboard_service_1 = require("../services/leaderboard-service");
+const leaderboard_repository_1 = require("../repositories/leaderboard-repository");
 // Create the leaderboard router
 exports.leaderboardRoutes = new hono_1.Hono();
 /**
- * GET /api/leaderboard
- * Get the global leaderboard with pagination
+ * GET /api/leaderboard/:gameId
+ * Get leaderboard for a specific game
  */
-exports.leaderboardRoutes.get('/', async (c) => {
+exports.leaderboardRoutes.get('/:gameId', async (c) => {
     try {
         const db = c.get('db');
+        const gameId = parseInt(c.req.param('gameId'));
         const page = parseInt(c.req.query('page') || '1');
         const limit = parseInt(c.req.query('limit') || '10');
-        const leaderboardService = new leaderboard_service_1.LeaderboardService(db);
-        const { entries, total } = await leaderboardService.getLeaderboard(page, limit);
+        if (isNaN(gameId)) {
+            return c.json({
+                success: false,
+                message: 'Invalid game ID'
+            }, 400);
+        }
+        const leaderboardRepository = new leaderboard_repository_1.LeaderboardRepository(db);
+        const { entries, total } = await leaderboardRepository.getGameLeaderboard(gameId, page, limit);
         return c.json({
             success: true,
             data: entries,
@@ -36,94 +43,148 @@ exports.leaderboardRoutes.get('/', async (c) => {
     }
 });
 /**
- * GET /api/leaderboard/store/:id
- * Get a specific store's position in the leaderboard with context
+ * GET /api/leaderboard/:gameId/stats
+ * Get statistics about the leaderboard for a game
  */
-exports.leaderboardRoutes.get('/store/:id', async (c) => {
+exports.leaderboardRoutes.get('/:gameId/stats', async (c) => {
     try {
         const db = c.get('db');
-        const storeId = parseInt(c.req.param('id'));
-        const context = parseInt(c.req.query('context') || '2'); // Number of stores to show before and after
-        if (isNaN(storeId)) {
+        const gameId = parseInt(c.req.param('gameId'));
+        if (isNaN(gameId)) {
             return c.json({
                 success: false,
-                message: 'Invalid store ID'
+                message: 'Invalid game ID'
             }, 400);
         }
-        const leaderboardService = new leaderboard_service_1.LeaderboardService(db);
-        const result = await leaderboardService.getLeaderboardPositionWithContext(storeId, context);
-        if (!result.storePosition) {
-            return c.json({
-                success: false,
-                message: 'Store not found in leaderboard'
-            }, 404);
-        }
-        return c.json({
-            success: true,
-            data: {
-                store: result.storePosition,
-                context: {
-                    above: result.storesAbove,
-                    below: result.storesBelow
-                },
-                total_stores: result.totalStores
-            }
-        });
-    }
-    catch (error) {
-        console.error('Error retrieving store position:', error);
-        return c.json({
-            success: false,
-            message: error.message || 'Failed to retrieve store position',
-        }, 500);
-    }
-});
-/**
- * GET /api/leaderboard/status
- * Get overall statistics for the leaderboard
- */
-exports.leaderboardRoutes.get('/status', async (c) => {
-    try {
-        const db = c.get('db');
-        const leaderboardService = new leaderboard_service_1.LeaderboardService(db);
-        const stats = await leaderboardService.getLeaderboardStatistics();
+        const leaderboardRepository = new leaderboard_repository_1.LeaderboardRepository(db);
+        const stats = await leaderboardRepository.getLeaderboardStats(gameId);
         return c.json({
             success: true,
             data: stats
         });
     }
     catch (error) {
-        console.error('Error retrieving leaderboard statistics:', error);
+        console.error('Error retrieving leaderboard stats:', error);
         return c.json({
             success: false,
-            message: error.message || 'Failed to retrieve leaderboard statistics',
+            message: error.message || 'Failed to retrieve leaderboard stats',
         }, 500);
     }
 });
 /**
- * POST /api/leaderboard/recalculate
- * Force a recalculation of the leaderboard (admin only)
+ * GET /api/leaderboard/:gameId/top/:count
+ * Get top players for a game
  */
-exports.leaderboardRoutes.post('/recalculate', async (c) => {
+exports.leaderboardRoutes.get('/:gameId/top/:count', async (c) => {
     try {
         const db = c.get('db');
-        // This would typically have authentication/authorization checks
-        // to ensure only admin users can recalculate the leaderboard
-        const leaderboardService = new leaderboard_service_1.LeaderboardService(db);
-        const result = await leaderboardService.recalculateLeaderboard();
+        const gameId = parseInt(c.req.param('gameId'));
+        const count = parseInt(c.req.param('count') || '10');
+        if (isNaN(gameId)) {
+            return c.json({
+                success: false,
+                message: 'Invalid game ID'
+            }, 400);
+        }
+        if (isNaN(count) || count < 1) {
+            return c.json({
+                success: false,
+                message: 'Invalid count parameter'
+            }, 400);
+        }
+        const leaderboardRepository = new leaderboard_repository_1.LeaderboardRepository(db);
+        const topPlayers = await leaderboardRepository.getTopPlayers(gameId, count);
         return c.json({
             success: true,
-            message: 'Leaderboard recalculated successfully',
+            data: topPlayers
+        });
+    }
+    catch (error) {
+        console.error('Error retrieving top players:', error);
+        return c.json({
+            success: false,
+            message: error.message || 'Failed to retrieve top players',
+        }, 500);
+    }
+});
+/**
+ * GET /api/leaderboard/:gameId/player/:playerId
+ * Get a specific player's rank and nearby players
+ */
+exports.leaderboardRoutes.get('/:gameId/player/:playerId', async (c) => {
+    try {
+        const db = c.get('db');
+        const gameId = parseInt(c.req.param('gameId'));
+        const playerId = parseInt(c.req.param('playerId'));
+        const range = parseInt(c.req.query('range') || '3');
+        if (isNaN(gameId)) {
+            return c.json({
+                success: false,
+                message: 'Invalid game ID'
+            }, 400);
+        }
+        if (isNaN(playerId)) {
+            return c.json({
+                success: false,
+                message: 'Invalid player ID'
+            }, 400);
+        }
+        const leaderboardRepository = new leaderboard_repository_1.LeaderboardRepository(db);
+        const playerRank = await leaderboardRepository.getPlayerRanking(playerId, gameId);
+        if (!playerRank) {
+            return c.json({
+                success: false,
+                message: 'Player not found on leaderboard'
+            }, 404);
+        }
+        const nearbyPlayers = await leaderboardRepository.getNearbyPlayers(playerId, gameId, range);
+        return c.json({
+            success: true,
             data: {
-                stores_updated: result.storesUpdated
+                player: playerRank,
+                nearby: nearbyPlayers
             }
         });
     }
     catch (error) {
-        console.error('Error recalculating leaderboard:', error);
+        console.error('Error retrieving player ranking:', error);
         return c.json({
             success: false,
-            message: error.message || 'Failed to recalculate leaderboard',
+            message: error.message || 'Failed to retrieve player ranking',
+        }, 500);
+    }
+});
+/**
+ * POST /api/leaderboard/:gameId/recalculate
+ * Recalculate ranks for a game's leaderboard (admin only)
+ */
+exports.leaderboardRoutes.post('/:gameId/recalculate', async (c) => {
+    try {
+        const db = c.get('db');
+        const gameId = parseInt(c.req.param('gameId'));
+        if (isNaN(gameId)) {
+            return c.json({
+                success: false,
+                message: 'Invalid game ID'
+            }, 400);
+        }
+        // This would typically have authentication/authorization checks
+        // to ensure only admin users can trigger recalculation
+        const leaderboardRepository = new leaderboard_repository_1.LeaderboardRepository(db);
+        const updatedCount = await leaderboardRepository.recalculateRanks(gameId);
+        return c.json({
+            success: true,
+            message: 'Leaderboard ranks recalculated successfully',
+            data: {
+                updatedEntries: updatedCount
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error recalculating leaderboard ranks:', error);
+        return c.json({
+            success: false,
+            message: error.message || 'Failed to recalculate leaderboard ranks',
         }, 500);
     }
 });

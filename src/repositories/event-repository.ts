@@ -148,4 +148,29 @@ export class EventRepository extends BaseRepository<Event> {
 
     return result.length > 0;
   }
+
+  /**
+   * Log an event
+   * @param eventData Event data to log
+   * @returns Logged event
+   */
+  async logEvent(eventData: { type: string; playerId: number; data: string; timestamp: string }): Promise<any> {
+    try {
+      const result = await this.db
+        .insert(events)
+        .values({
+          name: eventData.type, // Map type to the name field
+          playerId: eventData.playerId,
+          data: eventData.data,
+          timestamp: eventData.timestamp,
+          createdAt: new Date().toISOString()
+        })
+        .returning();
+
+      return result[0];
+    } catch (error) {
+      console.error('Error logging event:', error);
+      throw error;
+    }
+  }
 }

@@ -138,7 +138,8 @@ const createRewardSchema = zod_1.z.object({
     reward_type_id: zod_1.z.number().int().positive(),
     name: zod_1.z.string().min(1),
     description: zod_1.z.string().optional(),
-    value: zod_1.z.string() // JSON string containing reward details
+    value: zod_1.z.string(), // JSON string containing reward details
+    game_id: zod_1.z.number().int().positive() // Added game_id field
 });
 /**
  * POST /api/rewards
@@ -152,6 +153,7 @@ exports.rewardRoutes.post('/', (0, zod_validator_1.zValidator)('json', createRew
         // to ensure only admin users can create rewards
         const result = await db.insert(schema_1.rewards).values({
             missionId: data.mission_id,
+            gameId: data.game_id,
             rewardTypeId: data.reward_type_id,
             name: data.name,
             description: data.description,

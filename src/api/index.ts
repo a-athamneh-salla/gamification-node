@@ -9,6 +9,8 @@ import { taskRoutes } from './tasks';
 import { rewardRoutes } from './rewards';
 import { leaderboardRoutes } from './leaderboard';
 import { eventRoutes } from './events';
+import { gameRoutes } from './games';
+import { playerRoutes } from './players';
 
 // Create the main API router
 const api = new Hono<{
@@ -40,6 +42,8 @@ api.get('/', (c) => {
 
 // Register API routes
 api.route('/events', eventRoutes);
+api.route('/games', gameRoutes);
+api.route('/players', playerRoutes);
 api.route('/missions', missionRoutes);
 api.route('/tasks', taskRoutes);
 api.route('/rewards', rewardRoutes);

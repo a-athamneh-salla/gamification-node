@@ -1,7 +1,7 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, and, sql, or, isNull, ne } from 'drizzle-orm';
 import { BaseRepository } from './base-repository';
-import { tasks, storeTaskProgress, events } from '../db/schema';
-import { Task, TaskStatus, TaskWithProgress } from '../types';
+import { tasks, playerTaskProgress, missions } from '../db/schema';
+import { Task, TaskStatus } from '../types';
 import { DB } from '../db';
 
 /**
@@ -13,6 +13,53 @@ export class TaskRepository extends BaseRepository<Task> {
     super(db, 'tasks');
   }
 
+  private formatTask(row: any, progress?: any): Task {
+    return {
+      id: row.id,
+      missionId: row.missionId,
+      gameId: progress?.gameId,
+      eventId: row.eventId,
+      name: row.name,
+      description: row.description || undefined,
+      points: row.points,
+      isOptional: row.isOptional,
+      isActive: row.isActive,
+      requiredProgress: row.requiredProgress,
+      order: row.order,
+      status: progress?.status || 'not_started',
+      progress: progress?.progress || 0,
+      completedAt: progress?.completedAt || undefined,
+      skippedAt: progress?.skippedAt || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+
+  /**
+   * Find all tasks with pagination
+   * @param page Page number (1-based)
+   * @param limit Items per page
+   * @returns Object containing items array and total count
+   */
+  async findAll(page: number = 1, limit: number = 10): Promise<{ items: Task[], total: number }> {
+    const { offset, limit: limitParam } = this.getPaginationParams(page, limit);
+    
+    const items = await this.db
+      .select()
+      .from(tasks)
+      .limit(limitParam)
+      .offset(offset);
+    
+    const [{ count }] = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(tasks);
+    
+    return {
+      items: items as Task[],
+      total: Number(count)
+    };
+  }
+
   /**
    * Find task by ID
    * @param id Task ID
@@ -20,32 +67,125 @@ export class TaskRepository extends BaseRepository<Task> {
    */
   async findById(id: number): Promise<Task | null> {
     const result = await this.db
+      .select({
+        id: tasks.id,
+        missionId: tasks.missionId,
+        eventId: tasks.eventId,
+        name: tasks.name,
+        description: tasks.description,
+        points: tasks.points,
+        isOptional: tasks.isOptional,
+        order: tasks.order,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt
+      })
+      .from(tasks)
+      .where(eq(tasks.id, id))
+      .limit(1);
+
+    if (!result.length) return null;
+
+    return {
+      ...result[0],
+      description: result[0].description || undefined
+    } as Task;
+  }
+
+  /**
+   * Find task by ID with related event
+   * @param id Task ID
+   * @returns Task with event information or null if not found
+   */
+  async getTaskWithEvent(id: number): Promise<any> {
+    // This would typically join with the events table to get event details
+    const result = await this.db
       .select()
       .from(tasks)
       .where(eq(tasks.id, id))
       .limit(1);
 
-    return result.length ? result[0] as Task : null;
+    return result.length ? result[0] : null;
   }
 
   /**
-   * Find task by ID with progress for a specific store
-   * @param storeId Store ID
-   * @param taskId Task ID
-   * @returns TaskWithProgress or null if not found
+   * Find tasks for a player in a specific mission with progress information
+   * @param playerId Player ID
+   * @param missionId Mission ID
+   * @param status Optional filter by status
+   * @param page Page number (1-based)
+   * @param limit Items per page
+   * @returns Object with tasks array and total count
    */
-  async findByIdForStore(storeId: number, taskId: number): Promise<TaskWithProgress | null> {
+  async findByPlayerAndMission(
+    playerId: number,
+    missionId: number,
+    status: TaskStatus | 'all' = 'all',
+    page: number = 1,
+    limit: number = 10
+  ): Promise<{ tasks: Task[], total: number }> {
+    const { offset, limit: limitParam } = this.getPaginationParams(page, limit);
+    
+    // Get tasks for this mission with progress info
     const result = await this.db
-      .select({
-        task: tasks,
-        progress: storeTaskProgress
-      })
+      .select()
       .from(tasks)
       .leftJoin(
-        storeTaskProgress, 
+        playerTaskProgress,
         and(
-          eq(storeTaskProgress.taskId, tasks.id),
-          eq(storeTaskProgress.storeId, storeId)
+          eq(playerTaskProgress.taskId, tasks.id),
+          eq(playerTaskProgress.playerId, playerId)
+        )
+      )
+      .where(eq(tasks.missionId, missionId))
+      .orderBy(tasks.order)
+      .limit(limitParam)
+      .offset(offset);
+
+    // Filter by status if specified
+    let filteredResult = result;
+    if (status !== 'all') {
+      filteredResult = result.filter(row => {
+        // If no progress record exists, task is "not_started"
+        const rowStatus = row.player_task_progress?.status || 'not_started';
+        return rowStatus === status;
+      });
+    }
+
+    // Count total tasks
+    const countResult = await this.db
+      .select({ count: sql`count(*)` })
+      .from(tasks)
+      .where(eq(tasks.missionId, missionId));
+
+    // Add progress info to tasks
+    const tasksWithStatus = filteredResult.map(row => ({
+      ...row.tasks,
+      status: row.player_task_progress?.status || 'not_started',
+      completedAt: row.player_task_progress?.completedAt,
+      skippedAt: row.player_task_progress?.skippedAt
+    }));
+
+    return {
+      tasks: tasksWithStatus as Task[],
+      total: Number(countResult[0].count)
+    };
+  }
+
+  /**
+   * Find task by ID for a specific player with progress information
+   * @param playerId Player ID
+   * @param taskId Task ID
+   * @returns Task with progress information or null if not found
+   */
+  async findByIdForPlayer(playerId: number, taskId: number): Promise<Task | null> {
+    const result = await this.db
+      .select()
+      .from(tasks)
+      .leftJoin(
+        playerTaskProgress,
+        and(
+          eq(playerTaskProgress.taskId, tasks.id),
+          eq(playerTaskProgress.playerId, playerId)
         )
       )
       .where(eq(tasks.id, taskId))
@@ -55,84 +195,90 @@ export class TaskRepository extends BaseRepository<Task> {
       return null;
     }
 
-    const { task, progress } = result[0];
-    
+    const task = result[0].tasks;
+    const progress = result[0].player_task_progress;
+
     return {
-      ...task as Task,
+      ...task,
       status: progress?.status || 'not_started',
       completedAt: progress?.completedAt,
       skippedAt: progress?.skippedAt
-    } as TaskWithProgress;
+    } as Task;
   }
 
   /**
-   * Find all tasks with pagination
-   * @param page Page number (1-based)
-   * @param limit Items per page
-   * @returns Object containing tasks array and total count
+   * Update task progress for a player
+   * @param playerId Player ID
+   * @param taskId Task ID
+   * @param status New status
+   * @returns Updated task with progress information
    */
-  async findAll(page: number = 1, limit: number = 10): Promise<{ items: Task[], total: number }> {
-    const { offset, limit: limitParam } = this.getPaginationParams(page, limit);
+  async updateProgress(
+    playerId: number,
+    taskId: number,
+    status: TaskStatus
+  ): Promise<Task | null> {
+    const now = new Date().toISOString();
     
-    const result = await this.db
+    // Check if progress record exists
+    const existingProgress = await this.db
       .select()
-      .from(tasks)
-      .limit(limitParam)
-      .offset(offset);
-
-    const countResult = await this.db
-      .select({ count: sql`count(*)` })
-      .from(tasks);
-
-    return {
-      items: result as Task[],
-      total: Number(countResult[0].count)
-    };
-  }
-
-  /**
-   * Find tasks by mission ID with progress for a specific store
-   * @param storeId Store ID
-   * @param missionId Mission ID
-   * @returns Array of tasks with progress information
-   */
-  async findByMissionForStore(storeId: number, missionId: number): Promise<TaskWithProgress[]> {
-    const result = await this.db
-      .select({
-        task: tasks,
-        progress: storeTaskProgress
-      })
-      .from(tasks)
-      .leftJoin(
-        storeTaskProgress, 
+      .from(playerTaskProgress)
+      .where(
         and(
-          eq(storeTaskProgress.taskId, tasks.id),
-          eq(storeTaskProgress.storeId, storeId)
+          eq(playerTaskProgress.playerId, playerId),
+          eq(playerTaskProgress.taskId, taskId)
         )
       )
-      .where(eq(tasks.missionId, missionId))
-      .orderBy(tasks.order);
+      .limit(1);
 
-    return result.map(({ task, progress }) => ({
-      ...task as Task,
-      status: progress?.status || 'not_started',
-      completedAt: progress?.completedAt,
-      skippedAt: progress?.skippedAt
-    })) as TaskWithProgress[];
-  }
+    // Get task to get game ID
+    const task = await this.findById(taskId);
+    if (!task) {
+      throw new Error(`Task with ID ${taskId} not found`);
+    }
 
-  /**
-   * Find tasks by event ID
-   * @param eventId Event ID
-   * @returns Array of tasks
-   */
-  async findByEventId(eventId: number): Promise<Task[]> {
-    const result = await this.db
-      .select()
-      .from(tasks)
-      .where(eq(tasks.eventId, eventId));
+    // Prepare update data based on status
+    const updateData: any = {
+      status,
+      updatedAt: now
+    };
+    
+    if (status === 'completed') {
+      updateData.completedAt = now;
+    } else if (status === 'skipped') {
+      updateData.skippedAt = now;
+    }
 
-    return result as Task[];
+    if (existingProgress.length) {
+      // Update existing progress
+      await this.db
+        .update(playerTaskProgress)
+        .set(updateData)
+        .where(
+          and(
+            eq(playerTaskProgress.playerId, playerId),
+            eq(playerTaskProgress.taskId, taskId)
+          )
+        );
+    } else {
+      // Create new progress record
+      await this.db
+        .insert(playerTaskProgress)
+        .values({
+          playerId,
+          taskId,
+          gameId: task.gameId || task.missionId, // Use game ID from task, fall back to mission ID
+          status,
+          completedAt: status === 'completed' ? now : null,
+          skippedAt: status === 'skipped' ? now : null,
+          createdAt: now,
+          updatedAt: now
+        });
+    }
+
+    // Return updated task with progress
+    return this.findByIdForPlayer(playerId, taskId);
   }
 
   /**
@@ -141,20 +287,18 @@ export class TaskRepository extends BaseRepository<Task> {
    * @returns Created task
    */
   async create(data: Partial<Task>): Promise<Task> {
-    if (!data.missionId || !data.eventId) {
-      throw new Error('Mission ID and Event ID are required');
-    }
-
     const result = await this.db
       .insert(tasks)
       .values({
-        missionId: data.missionId,
-        eventId: data.eventId,
-        name: data.name as string,
+        name: data.name!,
         description: data.description,
-        points: data.points ?? 0,
+        missionId: data.missionId!,
+        eventId: data.eventId!,
+        points: data.points || 0,
         isOptional: data.isOptional ?? false,
-        order: data.order ?? 0,
+        isActive: data.isActive ?? true,
+        requiredProgress: data.requiredProgress || 1,
+        order: data.order || 0
       })
       .returning();
 
@@ -176,7 +320,7 @@ export class TaskRepository extends BaseRepository<Task> {
         points: data.points,
         isOptional: data.isOptional,
         order: data.order,
-        updatedAt: sql`CURRENT_TIMESTAMP`
+        updatedAt: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(tasks.id, id))
       .returning();
@@ -199,162 +343,324 @@ export class TaskRepository extends BaseRepository<Task> {
   }
 
   /**
-   * Update task progress for a store
-   * @param storeId Store ID
-   * @param taskId Task ID
-   * @param status Task status
-   * @returns Updated progress or null if error
+   * Find tasks by event ID
+   * @param eventId Event ID
+   * @returns Array of tasks
    */
-  async updateProgress(storeId: number, taskId: number, status: TaskStatus): Promise<any> {
-    // Check if progress entry exists
-    const existing = await this.db
-      .select()
-      .from(storeTaskProgress)
-      .where(
-        and(
-          eq(storeTaskProgress.taskId, taskId),
-          eq(storeTaskProgress.storeId, storeId)
-        )
-      )
-      .limit(1);
-
-    const now = new Date().toISOString();
-    const statusFields: Record<TaskStatus, Partial<typeof storeTaskProgress.$inferInsert>> = {
-      completed: { status, completedAt: now },
-      skipped: { status, skippedAt: now },
-      not_started: { status }
-    };
-    
-    if (existing.length) {
-      // Update existing progress
-      const result = await this.db
-        .update(storeTaskProgress)
-        .set({
-          ...statusFields[status],
-          updatedAt: sql`CURRENT_TIMESTAMP`
-        })
-        .where(
-          and(
-            eq(storeTaskProgress.taskId, taskId),
-            eq(storeTaskProgress.storeId, storeId)
-          )
-        )
-        .returning();
-      
-      return result[0];
-    } else {
-      // Create new progress entry
-      const result = await this.db
-        .insert(storeTaskProgress)
-        .values({
-          storeId,
-          taskId,
-          ...statusFields[status]
-        })
-        .returning();
-      
-      return result[0];
-    }
-  }
-
-  /**
-   * Get task details with event information
-   * @param taskId Task ID
-   * @returns Task with event details or null if not found
-   */
-  async getTaskWithEvent(taskId: number): Promise<Task | null> {
+  async findByEventId(eventId: string): Promise<Task[]> {
     const result = await this.db
-      .select({
-        task: tasks,
-        event: events
-      })
+      .select()
       .from(tasks)
-      .leftJoin(events, eq(tasks.eventId, events.id))
-      .where(eq(tasks.id, taskId))
-      .limit(1);
+      .where(eq(tasks.eventId, eventId));
 
-    if (!result.length) {
-      return null;
-    }
-
-    const { task, event } = result[0];
-    // Merge the task data with event in a format that matches the Task type
-    return {
-      ...task as Task,
-      event: event
-    } as Task;
+    return result.map(task => ({
+      ...task,
+      description: task.description ?? undefined
+    })) as Task[];
   }
 
   /**
-   * Find tasks for a store with optional filtering and pagination
-   * @param storeId Store ID
-   * @param missionId Optional mission ID filter
-   * @param status Optional task status filter
+   * Find tasks for a mission
+   * @param missionId Mission ID
+   * @returns Tasks array
+   */
+  async findByMission(missionId: number): Promise<Task[]> {
+    try {
+      const result = await this.db.select()
+        .from(tasks)
+        .where(eq(tasks.missionId, missionId));
+      
+      return result.map(task => ({
+        ...task,
+        description: task.description ?? undefined
+      })) as Task[];
+    } catch (error) {
+      console.error('Error finding tasks by mission ID:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Find all tasks for a player with progress information
+   * @param playerId Player ID
    * @param page Page number (1-based)
    * @param limit Items per page
    * @returns Object with tasks array and total count
    */
-  async findByStore(
-    storeId: number,
-    missionId?: number,
-    status: TaskStatus | 'all' = 'all',
+  async findByPlayer(
+    playerId: number,
     page: number = 1,
     limit: number = 10
-  ): Promise<{ tasks: TaskWithProgress[], total: number }> {
+  ): Promise<{ tasks: Task[], total: number }> {
     const { offset, limit: limitParam } = this.getPaginationParams(page, limit);
     
-    // Start building the query
-    let query = this.db
-      .select({
-        task: tasks,
-        progress: storeTaskProgress
-      })
+    // Get all tasks with progress info for this player
+    const result = await this.db
+      .select()
       .from(tasks)
       .leftJoin(
-        storeTaskProgress, 
+        playerTaskProgress,
         and(
-          eq(storeTaskProgress.taskId, tasks.id),
-          eq(storeTaskProgress.storeId, storeId)
+          eq(playerTaskProgress.taskId, tasks.id),
+          eq(playerTaskProgress.playerId, playerId)
         )
-      );
-    
-    // Add mission filter if provided
-    if (missionId) {
-      query = query.where(eq(tasks.missionId, missionId));
-    }
-    
-    // Add status filter if provided and not 'all'
-    if (status !== 'all') {
-      query = query.where(eq(storeTaskProgress.status, status));
-    }
-    
-    // Execute the query with pagination
-    const result = await query
+      )
       .orderBy(tasks.missionId, tasks.order)
       .limit(limitParam)
       .offset(offset);
-    
-    // Count total tasks matching the criteria
-    const countQuery = this.db.select({ count: sql`count(*)` }).from(tasks);
-    
-    // Apply the same filters to count query
-    if (missionId) {
-      countQuery.where(eq(tasks.missionId, missionId));
-    }
-    
-    const countResult = await countQuery;
-    
-    // Format the tasks for response
-    const formattedTasks = result.map(({ task, progress }) => ({
-      ...task as Task,
-      status: progress?.status || 'not_started',
-      completedAt: progress?.completedAt,
-      skippedAt: progress?.skippedAt
-    })) as TaskWithProgress[];
-    
+
+    // Count total tasks
+    const countResult = await this.db
+      .select({ count: sql`count(*)` })
+      .from(tasks);
+
+    // Add progress info to tasks
+    const tasksWithStatus = result.map(row => ({
+      ...row.tasks,
+      status: row.player_task_progress?.status || 'not_started',
+      completedAt: row.player_task_progress?.completedAt,
+      skippedAt: row.player_task_progress?.skippedAt
+    }));
+
     return {
-      tasks: formattedTasks,
+      tasks: tasksWithStatus as Task[],
       total: Number(countResult[0].count)
     };
+  }
+
+  /**
+   * Find tasks by mission ID
+   * @param missionId Mission ID
+   * @returns Array of tasks
+   */
+  async findByMissionId(missionId: number): Promise<Task[]> {
+    const result = await this.db
+      .select({
+        id: tasks.id,
+        missionId: tasks.missionId,
+        eventId: tasks.eventId,
+        name: tasks.name,
+        description: tasks.description,
+        points: tasks.points,
+        isOptional: tasks.isOptional,
+        order: tasks.order,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt
+      })
+      .from(tasks)
+      .where(eq(tasks.missionId, missionId))
+      .orderBy(tasks.order);
+
+    return result.map(row => ({
+      ...row,
+      description: row.description || undefined
+    })) as Task[];
+  }
+
+  /**
+   * Find task by player ID and task ID
+   * @param playerId Player ID
+   * @param taskId Task ID
+   * @returns Task with progress information or null if not found
+   */
+  async findByPlayerAndTaskId(playerId: number, taskId: number): Promise<Task | null> {
+    const result = await this.db
+      .select({
+        id: tasks.id,
+        missionId: tasks.missionId,
+        eventId: tasks.eventId,
+        name: tasks.name,
+        description: tasks.description,
+        points: tasks.points,
+        isOptional: tasks.isOptional,
+        order: tasks.order,
+        status: playerTaskProgress.status,
+        progress: sql<number>`COALESCE(${playerTaskProgress.progress}, 0)`,
+        completedAt: playerTaskProgress.completedAt,
+        skippedAt: playerTaskProgress.skippedAt,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt
+      })
+      .from(tasks)
+      .leftJoin(
+        playerTaskProgress,
+        and(
+          eq(playerTaskProgress.taskId, tasks.id),
+          eq(playerTaskProgress.playerId, playerId)
+        )
+      )
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+
+    if (!result.length) return null;
+
+    return {
+      ...result[0],
+      description: result[0].description || undefined,
+      status: result[0].status || 'not_started'
+    } as Task;
+  }
+
+  /**
+   * Find incomplete tasks by event ID and player ID
+   * @param playerId Player ID
+   * @param eventId Event ID
+   * @returns Array of incomplete tasks
+   */
+  async findIncompleteTasksByEvent(playerId: number, eventId: string): Promise<Task[]> {
+    const result = await this.db
+      .select()
+      .from(tasks)
+      .leftJoin(
+        playerTaskProgress,
+        and(
+          eq(playerTaskProgress.taskId, tasks.id),
+          eq(playerTaskProgress.playerId, playerId)
+        )
+      )
+      .where(
+        and(
+          eq(tasks.eventId, eventId),
+          or(
+            isNull(playerTaskProgress.status),
+            ne(playerTaskProgress.status, 'completed')
+          )
+        )
+      );
+
+    return result.map(row => ({
+      ...row.tasks,
+      description: row.tasks.description || undefined,
+      status: row.player_task_progress?.status || 'not_started'
+    })) as Task[];
+  }
+
+  /**
+   * Update player task progress
+   * @param playerId Player ID
+   * @param taskId Task ID
+   * @param status Task status
+   * @returns Updated task with progress information
+   */
+  async updatePlayerTaskProgress(
+    playerId: number,
+    taskId: number,
+    status: TaskStatus
+  ): Promise<Task> {
+    const now = new Date().toISOString();
+    const task = await this.findById(taskId);
+
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    // Get mission to get game ID
+    const mission = await this.db
+      .select()
+      .from(missions)
+      .where(eq(missions.id, task.missionId))
+      .limit(1);
+
+    if (!mission.length) {
+      throw new Error(`Mission ${task.missionId} not found`);
+    }
+
+    // Update or insert progress
+    await this.db
+      .insert(playerTaskProgress)
+      .values({
+        playerId,
+        taskId,
+        gameId: mission[0].gameId,
+        status,
+        completedAt: status === 'completed' ? now : null,
+        skippedAt: status === 'skipped' ? now : null,
+        createdAt: now,
+        updatedAt: now
+      })
+      .onConflictDoUpdate({
+        target: [playerTaskProgress.playerId, playerTaskProgress.taskId],
+        set: {
+          status,
+          completedAt: status === 'completed' ? now : null,
+          skippedAt: status === 'skipped' ? now : null,
+          updatedAt: now
+        }
+      });
+
+    return this.findByPlayerAndTaskId(playerId, taskId) as Promise<Task>;
+  }
+
+  async findByEvent(eventId: string): Promise<Task[]> {
+    const result = await this.db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.eventId, eventId.toString()));
+
+    return result.map(row => this.formatTask(row));
+  }
+
+  async findByEventWithProgress(eventId: string, playerId: number): Promise<Task[]> {
+    const result = await this.db
+      .select()
+      .from(tasks)
+      .leftJoin(
+        playerTaskProgress,
+        and(
+          eq(playerTaskProgress.taskId, tasks.id),
+          eq(playerTaskProgress.playerId, playerId)
+        )
+      )
+      .where(eq(tasks.eventId, eventId.toString()));
+
+    return result.map(row => this.formatTask(row.tasks, row.player_task_progress));
+  }
+
+  /**
+   * Find all tasks by event type
+   * @param eventType The event type
+   * @returns Array of tasks
+   */
+  async findByEventType(eventType: string): Promise<Task[]> {
+    const result = await this.db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.eventId, eventType))
+      .orderBy(tasks.order);
+    
+    return result as Task[];
+  }
+  
+  /**
+   * Find all completed tasks for a mission by player
+   * @param missionId The mission ID
+   * @param playerId The player ID
+   * @returns Array of completed tasks
+   */
+  async findAllCompletedTasksByMission(missionId: number, playerId: number): Promise<Task[]> {
+    const result = await this.db
+      .select({
+        task: tasks,
+        progress: playerTaskProgress
+      })
+      .from(tasks)
+      .innerJoin(
+        playerTaskProgress,
+        and(
+          eq(tasks.id, playerTaskProgress.taskId),
+          eq(playerTaskProgress.playerId, playerId),
+          eq(playerTaskProgress.status, 'completed')
+        )
+      )
+      .where(eq(tasks.missionId, missionId))
+      .orderBy(tasks.order);
+    
+    return result.map(row => ({
+      ...row.task,
+      status: row.progress.status,
+      progress: row.progress.progress,
+      completedAt: row.progress.completedAt,
+      skippedAt: row.progress.skippedAt
+    })) as Task[];
   }
 }

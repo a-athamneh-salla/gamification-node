@@ -36,45 +36,45 @@ class LeaderboardService {
         };
     }
     /**
-     * Get a store's position in the leaderboard with surrounding stores
-     * @param storeId Store ID
-     * @param context Number of entries to show above and below the store's position
-     * @returns Store position with context
+     * Get a player's position in the leaderboard with surrounding players
+     * @param playerId Player ID
+     * @param context Number of entries to show above and below the player's position
+     * @returns Player position with context
      */
-    async getLeaderboardPositionWithContext(storeId, context = 3) {
-        // Get the store's entry
-        const storeEntry = await this.getStoreRanking(storeId);
-        if (!storeEntry) {
+    async getLeaderboardPositionWithContext(playerId, context = 3) {
+        // Get the player's entry
+        const playerEntry = await this.getPlayerRanking(playerId);
+        if (!playerEntry) {
             return {
                 success: false,
-                message: `Store ${storeId} not found in leaderboard`
+                message: `Player ${playerId} not found in leaderboard`
             };
         }
-        // Get entries above the store's position
-        const storesAbove = await this.db
+        // Get entries above the player's position
+        const playersAbove = await this.db
             .select()
             .from(schema_1.leaderboard)
-            .where((0, drizzle_orm_1.gt)(schema_1.leaderboard.totalPoints, storeEntry.totalPoints))
+            .where((0, drizzle_orm_1.gt)(schema_1.leaderboard.totalPoints, playerEntry.totalPoints))
             .orderBy((0, drizzle_orm_1.desc)(schema_1.leaderboard.totalPoints))
             .limit(context);
-        // Get entries below the store's position
-        const storesBelow = await this.db
+        // Get entries below the player's position
+        const playersBelow = await this.db
             .select()
             .from(schema_1.leaderboard)
-            .where((0, drizzle_orm_1.lt)(schema_1.leaderboard.totalPoints, storeEntry.totalPoints))
+            .where((0, drizzle_orm_1.lt)(schema_1.leaderboard.totalPoints, playerEntry.totalPoints))
             .orderBy((0, drizzle_orm_1.desc)(schema_1.leaderboard.totalPoints))
             .limit(context);
-        // Count total stores
+        // Count total players
         const countResult = await this.db
             .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
             .from(schema_1.leaderboard);
         return {
             success: true,
             message: 'Leaderboard position retrieved successfully',
-            storePosition: storeEntry,
-            storesAbove: storesAbove,
-            storesBelow: storesBelow,
-            totalStores: Number(countResult[0].count)
+            playerPosition: playerEntry,
+            playersAbove: playersAbove,
+            playersBelow: playersBelow,
+            totalPlayers: Number(countResult[0].count)
         };
     }
     /**
@@ -82,7 +82,7 @@ class LeaderboardService {
      * @returns Leaderboard statistics
      */
     async getLeaderboardStatistics() {
-        // Count total stores
+        // Count total players
         const countResult = await this.db
             .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
             .from(schema_1.leaderboard);
@@ -103,7 +103,7 @@ class LeaderboardService {
             .select({ sum: (0, drizzle_orm_1.sql) `SUM(completed_tasks)` })
             .from(schema_1.leaderboard);
         return {
-            totalStores: Number(countResult[0].count),
+            totalPlayers: Number(countResult[0].count),
             topScore: Number(topScoreResult[0].max) || 0,
             averageScore: Math.round(Number(avgScoreResult[0].avg) || 0),
             totalMissionsCompleted: Number(missionsResult[0].sum) || 0,
@@ -119,14 +119,15 @@ class LeaderboardService {
     async recalculateLeaderboard() {
         try {
             await this.recalculateRankings();
-            // Count number of stores affected
+            // Count number of players affected
             const countResult = await this.db
                 .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
                 .from(schema_1.leaderboard);
             return {
                 success: true,
                 message: 'Leaderboard successfully recalculated',
-                storesUpdated: Number(countResult[0].count)
+                entriesUpdated: Number(countResult[0].count),
+                timestamp: new Date().toISOString()
             };
         }
         catch (error) {
@@ -134,89 +135,123 @@ class LeaderboardService {
             return {
                 success: false,
                 message: `Error recalculating leaderboard: ${error.message}`,
-                storesUpdated: 0
+                entriesUpdated: 0,
+                timestamp: new Date().toISOString()
             };
         }
     }
     /**
-     * Get a store's rank and position in the leaderboard
-     * @param storeId Store ID
-     * @returns Store ranking information or null if not found
+     * Get a player's rank and position in the leaderboard
+     * @param playerId Player ID
+     * @returns Player ranking information or null if not found
      */
-    async getStoreRanking(storeId) {
+    async getPlayerRanking(playerId) {
         const result = await this.db
             .select()
             .from(schema_1.leaderboard)
-            .where((0, drizzle_orm_1.eq)(schema_1.leaderboard.storeId, storeId))
+            .where((0, drizzle_orm_1.eq)(schema_1.leaderboard.playerId, playerId))
             .limit(1);
         return result.length ? result[0] : null;
     }
     /**
-     * Update leaderboard entry for a store
-     * @param storeId Store ID
-     * @param completedMission Whether a mission was just completed
-     * @param completedTasks Number of tasks just completed
-     * @param pointsEarned Points earned
-     * @returns Updated leaderboard entry
+     * Update leaderboard for a player
+     * @param playerId Player ID
+     * @param missionCompleted Whether a mission was completed
+     * @param tasksCompleted Number of tasks completed
+     * @param points Points earned
      */
-    async updateLeaderboard(storeId, completedMission = false, completedTasks = 0, pointsEarned = 0) {
-        // Check if entry exists for this store
-        const existingEntry = await this.db
-            .select()
-            .from(schema_1.leaderboard)
-            .where((0, drizzle_orm_1.eq)(schema_1.leaderboard.storeId, storeId))
-            .limit(1);
-        if (existingEntry.length) {
-            // Update existing entry
-            const entry = existingEntry[0];
-            const result = await this.db
-                .update(schema_1.leaderboard)
-                .set({
-                totalPoints: entry.totalPoints + pointsEarned,
-                completedMissions: entry.completedMissions + (completedMission ? 1 : 0),
-                completedTasks: entry.completedTasks + completedTasks,
-                updatedAt: (0, drizzle_orm_1.sql) `CURRENT_TIMESTAMP`
-            })
-                .where((0, drizzle_orm_1.eq)(schema_1.leaderboard.storeId, storeId))
-                .returning();
-            // After updating, recalculate rankings for all stores
-            await this.recalculateRankings();
-            return result[0];
-        }
-        else {
-            // Create new entry
-            const result = await this.db
-                .insert(schema_1.leaderboard)
+    async updateLeaderboard(playerId, missionCompleted = false, tasksCompleted = 0, points = 0) {
+        try {
+            // Get player's current game from their most recent activity
+            const latestActivity = await this.db.select()
+                .from(schema_1.playerMissionProgress)
+                .where((0, drizzle_orm_1.eq)(schema_1.playerMissionProgress.playerId, playerId))
+                .orderBy((0, drizzle_orm_1.desc)(schema_1.playerMissionProgress.updatedAt))
+                .limit(1);
+            let gameId = 1; // Default to game ID 1 if no activity found
+            if (latestActivity.length > 0) {
+                gameId = latestActivity[0].gameId;
+            }
+            // Get player's current stats
+            const playerStats = await this.getPlayerStats(playerId);
+            // Update leaderboard entry
+            await this.db.insert(schema_1.leaderboard)
                 .values({
-                storeId,
-                totalPoints: pointsEarned,
-                completedMissions: completedMission ? 1 : 0,
-                completedTasks: completedTasks,
+                gameId,
+                playerId,
+                totalPoints: playerStats.totalPoints + points,
+                completedMissions: playerStats.completedMissions + (missionCompleted ? 1 : 0),
+                completedTasks: playerStats.completedTasks + tasksCompleted,
+                rank: 0, // Will be updated by scheduled job
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
             })
-                .returning();
-            // After inserting, recalculate rankings for all stores
-            await this.recalculateRankings();
-            return result[0];
+                .onConflictDoUpdate({
+                target: [schema_1.leaderboard.gameId, schema_1.leaderboard.playerId],
+                set: {
+                    totalPoints: (0, drizzle_orm_1.sql) `${schema_1.leaderboard.totalPoints} + ${points}`,
+                    completedMissions: (0, drizzle_orm_1.sql) `${schema_1.leaderboard.completedMissions} + ${missionCompleted ? 1 : 0}`,
+                    completedTasks: (0, drizzle_orm_1.sql) `${schema_1.leaderboard.completedTasks} + ${tasksCompleted}`,
+                    updatedAt: (0, drizzle_orm_1.sql) `CURRENT_TIMESTAMP`
+                }
+            });
+            return true;
+        }
+        catch (error) {
+            console.error('Error updating leaderboard:', error);
+            return false;
         }
     }
     /**
-     * Recalculate rankings for all stores
+     * Get a player's stats
+     * @param playerId Player ID
+     * @returns Player stats
+     */
+    async getPlayerStats(playerId) {
+        const player = await this.db
+            .select()
+            .from(schema_1.leaderboard)
+            .where((0, drizzle_orm_1.eq)(schema_1.leaderboard.playerId, playerId))
+            .limit(1);
+        if (!player.length) {
+            return {
+                totalPoints: 0,
+                completedMissions: 0,
+                completedTasks: 0
+            };
+        }
+        return {
+            totalPoints: player[0].totalPoints,
+            completedMissions: player[0].completedMissions,
+            completedTasks: player[0].completedTasks
+        };
+    }
+    /**
+     * Update player's score
+     * @param playerId Player ID
+     * @param points Points to add
+     */
+    async updatePlayerScore(playerId, points) {
+        await this.updateLeaderboard(playerId, false, 0, points);
+    }
+    /**
+     * Recalculate rankings for all players
      * This updates the 'rank' field for each leaderboard entry
      */
     async recalculateRankings() {
-        // Get all stores ordered by points
-        const orderedStores = await this.db
+        // Get all players ordered by points
+        const orderedPlayers = await this.db
             .select()
             .from(schema_1.leaderboard)
             .orderBy((0, drizzle_orm_1.desc)(schema_1.leaderboard.totalPoints));
-        // Update rank for each store
-        for (let i = 0; i < orderedStores.length; i++) {
+        // Update rank for each player
+        for (let i = 0; i < orderedPlayers.length; i++) {
             await this.db
                 .update(schema_1.leaderboard)
                 .set({
                 rank: i + 1
             })
-                .where((0, drizzle_orm_1.eq)(schema_1.leaderboard.id, orderedStores[i].id));
+                .where((0, drizzle_orm_1.eq)(schema_1.leaderboard.id, orderedPlayers[i].id));
         }
     }
 }

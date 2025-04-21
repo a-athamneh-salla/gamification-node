@@ -1,11 +1,44 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
+
+// Games table schema
+export const games = sqliteTable('games', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  description: text('description'),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  startDate: text('start_date'),
+  endDate: text('end_date'),
+  targetType: text('target_type', { enum: ['all', 'specific', 'filtered'] }).notNull().default('all'),
+  targetPlayers: text('target_players'), // JSON string of target player IDs or filter criteria
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
+});
+
+// Players table schema
+export const players = sqliteTable('players', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  externalId: text('external_id').notNull().unique(), // External ID from Salla
+  name: text('name').notNull(),
+  email: text('email'),
+  metadata: text('metadata'), // JSON string with additional player data
+  points: integer('points').notNull().default(0),
+  totalPoints: integer('total_points').notNull().default(0),
+  tasksCompleted: integer('tasks_completed').notNull().default(0),
+  missionsCompleted: integer('missions_completed').notNull().default(0),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
+});
 
 // Events table schema
 export const events = sqliteTable('events', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull().unique(),
   description: text('description'),
+  type: text('type'),
+  playerId: integer('player_id'),
+  data: text('data'),
+  timestamp: text('timestamp'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
 });
@@ -13,6 +46,7 @@ export const events = sqliteTable('events', {
 // Missions table schema
 export const missions = sqliteTable('missions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
+  gameId: integer('game_id').notNull().references(() => games.id),
   name: text('name').notNull(),
   description: text('description'),
   pointsRequired: integer('points_required').notNull().default(0),
@@ -23,7 +57,7 @@ export const missions = sqliteTable('missions', {
   recurrencePattern: text('recurrence_pattern'),
   prerequisiteMissionId: integer('prerequisite_mission_id').references((): any => missions.id),
   targetType: text('target_type', { enum: ['all', 'specific', 'filtered'] }).notNull().default('all'),
-  targetStores: text('target_stores'), // JSON string of target store IDs or filter criteria
+  targetPlayers: text('target_players'), // JSON string of target player IDs or filter criteria
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
 });
@@ -32,11 +66,13 @@ export const missions = sqliteTable('missions', {
 export const tasks = sqliteTable('tasks', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   missionId: integer('mission_id').notNull().references(() => missions.id),
-  eventId: integer('event_id').notNull().references(() => events.id),
+  eventId: text('event_id').notNull(),
   name: text('name').notNull(),
   description: text('description'),
   points: integer('points').notNull().default(0),
   isOptional: integer('is_optional', { mode: 'boolean' }).notNull().default(false),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  requiredProgress: integer('required_progress').notNull().default(1),
   order: integer('order').notNull().default(0),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
@@ -55,6 +91,7 @@ export const rewardTypes = sqliteTable('reward_types', {
 export const rewards = sqliteTable('rewards', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   missionId: integer('mission_id').notNull().references(() => missions.id),
+  gameId: integer('game_id').notNull().references(() => games.id),
   rewardTypeId: integer('reward_type_id').notNull().references(() => rewardTypes.id),
   name: text('name').notNull(),
   description: text('description'),
@@ -63,35 +100,43 @@ export const rewards = sqliteTable('rewards', {
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
 });
 
-// Store mission progress table schema
-export const storeMissionProgress = sqliteTable('store_mission_progress', {
+// Player mission progress table schema (replacing store_mission_progress)
+export const playerMissionProgress = sqliteTable('player_mission_progress', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  storeId: integer('store_id').notNull(),
-  missionId: integer('mission_id').notNull().references(() => missions.id),
+  gameId: integer('game_id').notNull(),
+  missionId: integer('mission_id').notNull(),
+  playerId: integer('player_id').notNull(),
   status: text('status', { enum: ['not_started', 'in_progress', 'completed', 'skipped'] }).notNull().default('not_started'),
   pointsEarned: integer('points_earned').notNull().default(0),
+  progress: integer('progress').notNull().default(0),
   startedAt: text('started_at'),
-  completedAt: text('completed_at'),
-  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
-});
-
-// Store task progress table schema
-export const storeTaskProgress = sqliteTable('store_task_progress', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  storeId: integer('store_id').notNull(),
-  taskId: integer('task_id').notNull().references(() => tasks.id),
-  status: text('status', { enum: ['not_started', 'completed', 'skipped'] }).notNull().default('not_started'),
   completedAt: text('completed_at'),
   skippedAt: text('skipped_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
 });
 
-// Store rewards table schema
-export const storeRewards = sqliteTable('store_rewards', {
+// Player task progress table schema (replacing store_task_progress)
+export const playerTaskProgress = sqliteTable('player_task_progress', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  storeId: integer('store_id').notNull(),
+  playerId: integer('player_id').notNull(),
+  taskId: integer('task_id').notNull(),
+  gameId: integer('game_id').notNull(),
+  status: text('status', { enum: ['not_started', 'in_progress', 'completed', 'skipped'] }).notNull().default('not_started'),
+  progress: integer('progress').notNull().default(0),
+  completedAt: text('completed_at'),
+  skippedAt: text('skipped_at'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`)
+}, (table) => ({
+  playerTaskIndex: uniqueIndex('player_task_idx').on(table.playerId, table.taskId)
+}));
+
+// Player rewards table schema (replacing store_rewards)
+export const playerRewards = sqliteTable('player_rewards', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  playerId: integer('player_id').notNull(),
+  gameId: integer('game_id').notNull().references(() => games.id),
   rewardId: integer('reward_id').notNull().references(() => rewards.id),
   status: text('status', { enum: ['earned', 'claimed', 'expired'] }).notNull().default('earned'),
   earnedAt: text('earned_at').notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -104,7 +149,8 @@ export const storeRewards = sqliteTable('store_rewards', {
 // Event logs table schema
 export const eventLogs = sqliteTable('event_logs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  storeId: integer('store_id').notNull(),
+  playerId: integer('player_id').notNull(),
+  gameId: integer('game_id').notNull(),
   eventId: integer('event_id').notNull().references(() => events.id),
   payload: text('payload'), // JSON string of the event payload
   processed: integer('processed', { mode: 'boolean' }).notNull().default(false),
@@ -115,7 +161,8 @@ export const eventLogs = sqliteTable('event_logs', {
 // Leaderboard table schema
 export const leaderboard = sqliteTable('leaderboard', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  storeId: integer('store_id').notNull().unique(),
+  playerId: integer('player_id').notNull(),
+  gameId: integer('game_id').notNull().references(() => games.id),
   totalPoints: integer('total_points').notNull().default(0),
   completedMissions: integer('completed_missions').notNull().default(0),
   completedTasks: integer('completed_tasks').notNull().default(0),

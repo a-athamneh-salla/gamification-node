@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RewardService = void 0;
-const drizzle_orm_1 = require("drizzle-orm");
+const player_repository_1 = require("../repositories/player-repository");
 const schema_1 = require("../db/schema");
+const drizzle_orm_1 = require("drizzle-orm");
 /**
  * Reward Service
  * Handles business logic for rewards
@@ -10,41 +11,103 @@ const schema_1 = require("../db/schema");
 class RewardService {
     constructor(db) {
         this.db = db;
+        this.playerRepository = new player_repository_1.PlayerRepository(db);
     }
     /**
-     * Get rewards for a store with optional status filtering and pagination
-     * @param storeId Store ID
+     * Grant a reward to a player
+     * @param playerId Player ID
+     * @param reward Reward object
+     * @returns Granted reward
+     */
+    async grantReward(playerId, reward) {
+        try {
+            // Check if player already has this reward
+            const playerRewards = await this.playerRepository.getPlayerRewards(playerId);
+            const alreadyHasReward = playerRewards.some(r => r.id === reward.id);
+            if (alreadyHasReward) {
+                console.log(`Player ${playerId} already has reward ${reward.id}`);
+                return null;
+            }
+            // Grant reward
+            const now = new Date().toISOString();
+            let expiresAt = undefined;
+            // Set expiration if applicable
+            if (reward.expirationDays) {
+                const expireDate = new Date();
+                expireDate.setDate(expireDate.getDate() + reward.expirationDays);
+                expiresAt = expireDate.toISOString();
+            }
+            // Create player reward
+            await this.playerRepository.grantRewardToPlayer(playerId, reward.id, reward.gameId, 'earned');
+            return {
+                ...reward,
+                playerId,
+                status: 'earned',
+                earnedAt: now,
+                expiresAt
+            };
+        }
+        catch (error) {
+            console.error(`Error granting reward ${reward.id} to player ${playerId}:`, error);
+            return null;
+        }
+    }
+    /**
+     * Grant multiple rewards to a player
+     * @param playerId Player ID
+     * @param rewardsList Array of rewards to grant
+     * @param context Additional context (e.g. mission ID)
+     * @returns Array of granted rewards
+     */
+    async grantRewards(playerId, rewardsList, _context) {
+        const grantedRewards = [];
+        for (const reward of rewardsList) {
+            try {
+                const playerReward = await this.grantReward(playerId, reward);
+                if (playerReward) {
+                    grantedRewards.push(playerReward);
+                }
+            }
+            catch (error) {
+                console.error(`Failed to grant reward ${reward.id} to player ${playerId}:`, error);
+            }
+        }
+        return grantedRewards;
+    }
+    /**
+     * Get rewards for a player with optional status filtering and pagination
+     * @param playerId Player ID
      * @param status Filter by reward status
      * @param page Page number (1-based)
      * @param limit Items per page
      * @returns Object with rewards array and total count
      */
-    async getRewardsByStore(storeId, status = 'all', page = 1, limit = 10) {
+    async getRewardsByPlayer(playerId, status = 'all', page = 1, limit = 10) {
         const offset = (page - 1) * limit;
         // Build query conditions
-        const conditions = (0, drizzle_orm_1.eq)(schema_1.storeRewards.storeId, storeId);
+        const conditions = (0, drizzle_orm_1.eq)(schema_1.playerRewards.playerId, playerId);
         // Add status filter if provided
         const statusCondition = status !== 'all'
-            ? (0, drizzle_orm_1.and)(conditions, (0, drizzle_orm_1.eq)(schema_1.storeRewards.status, status))
+            ? (0, drizzle_orm_1.and)(conditions, (0, drizzle_orm_1.eq)(schema_1.playerRewards.status, status))
             : conditions;
         // Get rewards with their details
         const result = await this.db
             .select({
-            storeReward: schema_1.storeRewards,
+            playerReward: schema_1.playerRewards,
             reward: schema_1.rewards
         })
-            .from(schema_1.storeRewards)
-            .leftJoin(schema_1.rewards, (0, drizzle_orm_1.eq)(schema_1.storeRewards.rewardId, schema_1.rewards.id))
+            .from(schema_1.playerRewards)
+            .leftJoin(schema_1.rewards, (0, drizzle_orm_1.eq)(schema_1.playerRewards.rewardId, schema_1.rewards.id))
             .where(statusCondition)
             .limit(limit)
             .offset(offset);
         // Count total rewards matching the criteria
         const countResult = await this.db
             .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
-            .from(schema_1.storeRewards)
+            .from(schema_1.playerRewards)
             .where(statusCondition);
         // Format the rewards for response
-        const formattedRewards = result.map(({ storeReward, reward }) => {
+        const formattedRewards = result.map(({ playerReward, reward }) => {
             if (!reward)
                 return null;
             return {
@@ -53,10 +116,10 @@ class RewardService {
                 description: reward.description,
                 type: reward.rewardTypeId,
                 value: JSON.parse(reward.value || '{}'),
-                status: storeReward.status,
-                earned_at: storeReward.earnedAt,
-                claimed_at: storeReward.claimedAt,
-                expires_at: storeReward.expiresAt
+                status: playerReward.status,
+                earned_at: playerReward.earnedAt,
+                claimed_at: playerReward.claimedAt,
+                expires_at: playerReward.expiresAt
             };
         }).filter(item => item !== null);
         return {
@@ -65,71 +128,72 @@ class RewardService {
         };
     }
     /**
-     * Get a specific reward for a store
-     * @param storeId Store ID
+     * Get a specific reward for a player
+     * @param playerId Player ID
      * @param rewardId Reward ID
      * @returns Reward information or null if not found
      */
-    async getRewardById(storeId, rewardId) {
+    async getRewardById(playerId, rewardId) {
         const result = await this.db
             .select({
-            storeReward: schema_1.storeRewards,
+            playerReward: schema_1.playerRewards,
             reward: schema_1.rewards
         })
-            .from(schema_1.storeRewards)
-            .leftJoin(schema_1.rewards, (0, drizzle_orm_1.eq)(schema_1.storeRewards.rewardId, schema_1.rewards.id))
-            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.storeRewards.storeId, storeId), (0, drizzle_orm_1.eq)(schema_1.storeRewards.rewardId, rewardId)))
+            .from(schema_1.playerRewards)
+            .leftJoin(schema_1.rewards, (0, drizzle_orm_1.eq)(schema_1.playerRewards.rewardId, schema_1.rewards.id))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.playerRewards.playerId, playerId), (0, drizzle_orm_1.eq)(schema_1.playerRewards.rewardId, rewardId)))
             .limit(1);
         if (!result.length || !result[0].reward) {
             return null;
         }
-        const { reward, storeReward } = result[0];
+        const { reward, playerReward } = result[0];
         return {
             id: reward.id,
+            gameId: reward.gameId,
             missionId: reward.missionId,
             rewardTypeId: reward.rewardTypeId,
             name: reward.name,
             description: reward.description || undefined,
             value: reward.value,
-            status: storeReward.status,
-            earnedAt: storeReward.earnedAt || undefined,
-            claimedAt: storeReward.claimedAt || undefined,
-            expiresAt: storeReward.expiresAt || undefined,
+            status: playerReward.status,
+            earnedAt: playerReward.earnedAt || undefined,
+            claimedAt: playerReward.claimedAt || undefined,
+            expiresAt: playerReward.expiresAt || undefined,
             createdAt: reward.createdAt,
             updatedAt: reward.updatedAt
         };
     }
     /**
-     * Claim a reward for a store
-     * @param storeId Store ID
+     * Claim a reward for a player
+     * @param playerId Player ID
      * @param rewardId Reward ID
      * @returns Object indicating success or failure
      */
-    async claimReward(storeId, rewardId) {
+    async claimReward(playerId, rewardId) {
         try {
-            // Check if the store has earned this reward
-            const storeRewardResult = await this.db
+            // Check if the player has earned this reward
+            const playerRewardResult = await this.db
                 .select()
-                .from(schema_1.storeRewards)
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.storeRewards.storeId, storeId), (0, drizzle_orm_1.eq)(schema_1.storeRewards.rewardId, rewardId)))
+                .from(schema_1.playerRewards)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.playerRewards.playerId, playerId), (0, drizzle_orm_1.eq)(schema_1.playerRewards.rewardId, rewardId)))
                 .limit(1);
-            if (!storeRewardResult.length) {
+            if (!playerRewardResult.length) {
                 return {
                     success: false,
-                    message: `Reward with ID ${rewardId} not found for store ${storeId}`
+                    message: `Reward with ID ${rewardId} not found for player ${playerId}`
                 };
             }
-            const storeReward = storeRewardResult[0];
+            const playerReward = playerRewardResult[0];
             // Check if reward is already claimed
-            if (storeReward.status === 'claimed') {
+            if (playerReward.status === 'claimed') {
                 return {
                     success: false,
                     message: 'Reward has already been claimed'
                 };
             }
             // Check if reward is expired
-            if (storeReward.status === 'expired' ||
-                (storeReward.expiresAt && new Date(storeReward.expiresAt) < new Date())) {
+            if (playerReward.status === 'expired' ||
+                (playerReward.expiresAt && new Date(playerReward.expiresAt) < new Date())) {
                 return {
                     success: false,
                     message: 'Reward has expired and cannot be claimed'
@@ -138,15 +202,15 @@ class RewardService {
             // Update reward status to claimed
             const now = new Date().toISOString();
             await this.db
-                .update(schema_1.storeRewards)
+                .update(schema_1.playerRewards)
                 .set({
                 status: 'claimed',
                 claimedAt: now,
                 updatedAt: (0, drizzle_orm_1.sql) `CURRENT_TIMESTAMP`
             })
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.storeRewards.storeId, storeId), (0, drizzle_orm_1.eq)(schema_1.storeRewards.rewardId, rewardId)));
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.playerRewards.playerId, playerId), (0, drizzle_orm_1.eq)(schema_1.playerRewards.rewardId, rewardId)));
             // Get the updated reward
-            const reward = await this.getRewardById(storeId, rewardId);
+            const reward = await this.getRewardById(playerId, rewardId);
             return {
                 success: true,
                 message: 'Reward claimed successfully',
@@ -162,12 +226,12 @@ class RewardService {
         }
     }
     /**
-     * Grant a reward to a store when a mission is completed
-     * @param storeId Store ID
+     * Grant a reward to a player when a mission is completed
+     * @param playerId Player ID
      * @param missionId Mission ID
      * @returns Object indicating success or failure
      */
-    async grantRewardForMission(storeId, missionId) {
+    async grantRewardForMission(playerId, missionId) {
         try {
             // Find the reward for this mission
             const rewardResult = await this.db
@@ -182,17 +246,17 @@ class RewardService {
                 };
             }
             const reward = rewardResult[0];
-            // Check if the store already has this reward
+            // Check if the player already has this reward
             const existingReward = await this.db
                 .select()
-                .from(schema_1.storeRewards)
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.storeRewards.storeId, storeId), (0, drizzle_orm_1.eq)(schema_1.storeRewards.rewardId, reward.id)))
+                .from(schema_1.playerRewards)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.playerRewards.playerId, playerId), (0, drizzle_orm_1.eq)(schema_1.playerRewards.rewardId, reward.id)))
                 .limit(1);
             if (existingReward.length) {
                 return {
                     success: false,
                     rewardId: reward.id,
-                    message: 'Store already has this reward'
+                    message: 'Player already has this reward'
                 };
             }
             // Determine expiration date if applicable
@@ -203,13 +267,14 @@ class RewardService {
                 expirationDate.setDate(expirationDate.getDate() + rewardValue.expirationDays);
                 expiresAt = expirationDate.toISOString();
             }
-            // Grant the reward to the store
+            // Grant the reward to the player
             const now = new Date().toISOString();
             await this.db
-                .insert(schema_1.storeRewards)
+                .insert(schema_1.playerRewards)
                 .values({
-                storeId,
+                playerId,
                 rewardId: reward.id,
+                gameId: reward.gameId, // Add the gameId from the reward
                 status: 'earned',
                 earnedAt: now,
                 expiresAt
@@ -227,6 +292,140 @@ class RewardService {
                 message: `Error granting reward: ${error.message}`
             };
         }
+    }
+    /**
+     * Get player rewards by status
+     * @param playerId Player ID
+     * @param status Optional status filter
+     * @param page Page number (1-based)
+     * @param limit Items per page
+     * @returns Object with rewards array and total count
+     */
+    async getPlayerRewards(playerId, status, page = 1, limit = 10) {
+        const result = await this.db
+            .select()
+            .from(schema_1.playerRewards)
+            .leftJoin(schema_1.rewards, (0, drizzle_orm_1.eq)(schema_1.playerRewards.rewardId, schema_1.rewards.id))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.playerRewards.playerId, playerId), status ? (0, drizzle_orm_1.eq)(schema_1.playerRewards.status, status) : undefined))
+            .limit(limit)
+            .offset((page - 1) * limit);
+        const total = await this.db
+            .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
+            .from(schema_1.playerRewards)
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.playerRewards.playerId, playerId), status ? (0, drizzle_orm_1.eq)(schema_1.playerRewards.status, status) : undefined));
+        const mappedRewards = result.map(row => {
+            if (!row.rewards) {
+                throw new Error(`Reward data is missing for player reward ${row.player_rewards.id}`);
+            }
+            return {
+                id: row.rewards.id,
+                playerId,
+                gameId: row.rewards.gameId,
+                missionId: row.rewards.missionId,
+                rewardTypeId: row.rewards.rewardTypeId,
+                name: row.rewards.name,
+                description: row.rewards.description ?? undefined,
+                value: row.rewards.value,
+                status: row.player_rewards.status,
+                earnedAt: row.player_rewards.earnedAt,
+                claimedAt: row.player_rewards.claimedAt ?? undefined,
+                expiresAt: row.player_rewards.expiresAt ?? undefined,
+                createdAt: row.rewards.createdAt,
+                updatedAt: row.rewards.updatedAt
+            };
+        });
+        return {
+            rewards: mappedRewards,
+            total: Number(total[0].count)
+        };
+    }
+    /**
+     * Get rewards for a player (renamed from getRewardsByStore to be consistent with player focus)
+     * @param playerId Player ID
+     * @param status Filter by status
+     * @param page Page number
+     * @param limit Items per page
+     * @returns Player rewards with pagination
+     */
+    async getRewardsByStore(playerId, status, page = 1, limit = 10) {
+        return await this.getPlayerRewards(playerId, status, page, limit);
+    }
+    async findById(id) {
+        const result = await this.db
+            .select()
+            .from(schema_1.rewards)
+            .where((0, drizzle_orm_1.eq)(schema_1.rewards.id, id))
+            .limit(1);
+        if (!result.length) {
+            return null;
+        }
+        const row = result[0];
+        return {
+            id: row.id,
+            gameId: row.gameId,
+            missionId: row.missionId,
+            rewardTypeId: row.rewardTypeId,
+            name: row.name,
+            description: row.description ?? undefined,
+            value: row.value,
+            status: undefined,
+            earnedAt: undefined,
+            claimedAt: undefined,
+            expiresAt: undefined,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt
+        };
+    }
+    /**
+     * Grant rewards for a completed mission
+     * @param missionId Mission ID
+     * @param playerId Player ID
+     * @param gameId Optional game ID
+     * @returns Array of granted rewards
+     */
+    async grantRewardsForMission(missionId, playerId, gameId) {
+        try {
+            // Find all rewards for this mission
+            const missionRewards = await this.db
+                .select()
+                .from(schema_1.rewards)
+                .where((0, drizzle_orm_1.eq)(schema_1.rewards.missionId, missionId));
+            if (!missionRewards.length) {
+                console.log(`No rewards found for mission ${missionId}`);
+                return [];
+            }
+            const grantedRewards = [];
+            // Grant each reward to the player
+            for (const reward of missionRewards) {
+                try {
+                    const result = await this.grantReward(playerId, {
+                        ...reward,
+                        gameId: gameId || reward.gameId
+                    });
+                    if (result) {
+                        grantedRewards.push(result);
+                    }
+                }
+                catch (error) {
+                    console.error(`Error granting reward ${reward.id} for mission ${missionId} to player ${playerId}:`, error);
+                }
+            }
+            return grantedRewards;
+        }
+        catch (error) {
+            console.error(`Error granting rewards for mission ${missionId} to player ${playerId}:`, error);
+            return [];
+        }
+    }
+    /**
+     * Get unclaimed rewards for a player with pagination
+     * @param playerId Player ID
+     * @param page Page number (1-based)
+     * @param limit Items per page
+     * @returns Object with rewards array and total count
+     */
+    async getUnclaimedRewards(playerId, page = 1, limit = 10) {
+        return this.getPlayerRewards(playerId, 'earned', page, limit);
     }
 }
 exports.RewardService = RewardService;
