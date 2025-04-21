@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Salla Gamification System is designed to improve merchant onboarding through a dynamic, reward-based experience. It introduces missions composed of tasks that guide new merchants through essential steps to set up their stores.
+The Salla Gamification System is designed to improve merchant onboarding through a dynamic, reward-based experience. It introduces missions composed of tasks that guide new merchants through essential steps to set up their stores within various games.
 
 ## System Architecture
 
@@ -12,6 +12,7 @@ The Salla Gamification System is designed to improve merchant onboarding through
 - **Testing:** Jest
 - **API Documentation:** Swagger
 - **Analytics:** Event tracking via Jitsu using Segment event schema
+- **Multi-tenant Architecture:** Data partitioned by Player ID and Game ID
 
 ## Getting Started
 
@@ -66,7 +67,8 @@ Request Body:
 ```json
 {
   "event": "Product Added",
-  "store_id": 123,
+  "player_id": 123,
+  "game_id": 1,
   "timestamp": "2025-04-14T12:00:00Z",
   "properties": {
     // Additional event properties
@@ -87,18 +89,99 @@ Response:
 }
 ```
 
+### Game APIs
+
+#### Get Game Details
+
+```sh
+GET /api/games/:id
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "id": 1,
+    "name": "Store Onboarding",
+    "description": "Complete essential steps to set up your store",
+    "active": true,
+    "created_at": "2025-03-01T00:00:00Z",
+    "updated_at": "2025-04-01T00:00:00Z"
+  }
+}
+```
+
+#### List Games
+
+```sh
+GET /api/games
+```
+
+Response:
+
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "name": "Store Onboarding",
+      "description": "Complete essential steps to set up your store",
+      "active": true
+    },
+    {
+      "id": 2,
+      "name": "Marketing Master",
+      "description": "Improve your marketing strategy",
+      "active": true
+    }
+  ],
+  "meta": {
+    "current_page": 1,
+    "per_page": 10,
+    "total": 2
+  }
+}
+```
+
+### Player APIs
+
+#### Get Player Details
+
+```sh
+GET /api/players/:id
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "id": 123,
+    "name": "Tech World Store",
+    "email": "owner@techworld.com",
+    "created_at": "2025-02-15T10:30:00Z",
+    "total_points": 1100,
+    "completed_missions": 7,
+    "completed_tasks": 28
+  }
+}
+```
+
 ### Mission APIs
 
 #### Get Available Missions
 
-Returns missions available to a specific store.
+Returns missions available to a specific player in a specific game.
 
 ```sh
-GET /api/stores/:storeId/missions
+GET /api/missions
 ```
 
 Query Parameters:
 
+- `player_id` - ID of the player (required)
+- `game_id` - ID of the game (required)
 - `status` - Filter by mission status (not_started, in_progress, completed, all)
 - `page` - Page number for pagination
 - `limit` - Number of records per page
@@ -147,8 +230,12 @@ Response:
 #### Get Mission Details
 
 ```sh
-GET /api/stores/:storeId/missions/:missionId
+GET /api/missions/:id
 ```
+
+Query Parameters:
+- `player_id` - ID of the player (required)
+- `game_id` - ID of the game (required)
 
 Response:
 
@@ -175,12 +262,81 @@ Response:
 }
 ```
 
+#### Get Mission Tasks
+
+```sh
+GET /api/missions/:id/tasks
+```
+
+Query Parameters:
+- `player_id` - ID of the player (required)
+- `game_id` - ID of the game (required)
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "Add First Product",
+      "description": "Add your first product to your store",
+      "points": 25,
+      "status": "completed"
+    },
+    {
+      "id": 2,
+      "name": "Set Store Logo",
+      "description": "Upload your store logo",
+      "points": 25,
+      "status": "not_started"
+    }
+  ]
+}
+```
+
+#### Get Mission Rewards
+
+```sh
+GET /api/missions/:id/rewards
+```
+
+Query Parameters:
+- `player_id` - ID of the player (required)
+- `game_id` - ID of the game (required)
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "Premium Badge",
+      "description": "Premium store badge for your profile",
+      "type": "badge",
+      "status": "earned"
+    }
+  ]
+}
+```
+
 ### Task APIs
 
 #### Skip Task
 
 ```sh
-POST /api/stores/:storeId/tasks/:taskId/skip
+POST /api/tasks/:id/skip
+```
+
+Request Body:
+```json
+{
+  "player_id": 123,
+  "game_id": 1
+}
 ```
 
 Response:
@@ -198,14 +354,15 @@ Response:
 
 ### Reward APIs
 
-#### Get Store Rewards
+#### Get Player Rewards
 
 ```sh
-GET /api/stores/:storeId/rewards
+GET /api/rewards
 ```
 
 Query Parameters:
-
+- `player_id` - ID of the player (required)
+- `game_id` - ID of the game (required)
 - `status` - Filter by reward status (earned, claimed, expired)
 - `page` - Page number for pagination
 - `limit` - Number of records per page
@@ -237,7 +394,15 @@ Response:
 #### Claim Reward
 
 ```sh
-POST /api/stores/:storeId/rewards/:rewardId/claim
+POST /api/rewards/:id/claim
+```
+
+Request Body:
+```json
+{
+  "player_id": 123,
+  "game_id": 1
+}
 ```
 
 Response:
@@ -263,7 +428,7 @@ GET /api/leaderboard
 ```
 
 Query Parameters:
-
+- `game_id` - ID of the game (required)
 - `page` - Page number for pagination
 - `limit` - Number of records per page
 
@@ -274,21 +439,21 @@ Response:
   "data": [
     {
       "rank": 1,
-      "store_id": 456,
-      "store_name": "Fashion Hub",
+      "player_id": 456,
+      "player_name": "Fashion Hub",
       "total_points": 1250,
       "completed_missions": 8,
       "completed_tasks": 32
     },
     {
       "rank": 2,
-      "store_id": 123,
-      "store_name": "Tech World",
+      "player_id": 123,
+      "player_name": "Tech World",
       "total_points": 1100,
       "completed_missions": 7,
       "completed_tasks": 28
     }
-    // More stores...
+    // More players...
   ],
   "meta": {
     "current_page": 1,
@@ -306,26 +471,34 @@ Response:
 /src
   /api          # API routes
     /events.ts    # Event handling endpoint
+    /games.ts     # Games endpoints
+    /players.ts   # Players endpoints
     /missions.ts  # Mission endpoints
     /rewards.ts   # Reward endpoints
     /tasks.ts     # Task endpoints
+    /leaderboard.ts # Leaderboard endpoints
   /models       # Data models
     /event.ts     # Event model
+    /game.ts      # Game model
     /mission.ts   # Mission model
     /task.ts      # Task model
     /reward.ts    # Reward model
-    /store.ts     # Store model
+    /player.ts    # Player model
   /services     # Business logic
     /event-processor.ts  # Event processing service
     /mission-service.ts  # Mission management service
     /reward-service.ts   # Reward distribution service
     /task-service.ts     # Task management service
+    /leaderboard-service.ts # Leaderboard service
   /repositories # Data access
     /base-repository.ts  # Base repository abstract class
     /event-repository.ts # Event data repository
+    /game-repository.ts  # Game data repository
     /mission-repository.ts # Mission data repository
     /task-repository.ts  # Task data repository
     /reward-repository.ts # Reward data repository
+    /player-repository.ts # Player data repository
+    /leaderboard-repository.ts # Leaderboard data repository
   /utils        # Utility functions
     /validators.ts # Input validation
     /error-handling.ts # Error handling utilities
@@ -445,11 +618,11 @@ Common issues and their solutions:
    - Check event format against expected schema
    - Verify event ID exists in the events table
 
-3. **Mission not appearing for store**
+3. **Mission not appearing for player**
 
    - Check mission targeting configuration
    - Verify prerequisite missions are completed
-   - Check start/end dates
+   - Check start/end dates for the game
 
 ## Contributing
 

@@ -7,12 +7,27 @@ const zod_1 = require("zod");
 const event_processor_1 = require("../services/event-processor");
 const event_repository_1 = require("../repositories/event-repository");
 const schema_1 = require("../db/schema");
+const task_repository_1 = require("../repositories/task-repository");
+const mission_repository_1 = require("../repositories/mission-repository");
+const player_repository_1 = require("../repositories/player-repository");
+const leaderboard_service_1 = require("../services/leaderboard-service");
+const reward_service_1 = require("../services/reward-service");
+function createEventProcessor(db) {
+    const eventRepository = new event_repository_1.EventRepository(db);
+    const taskRepository = new task_repository_1.TaskRepository(db);
+    const missionRepository = new mission_repository_1.MissionRepository(db);
+    const playerRepository = new player_repository_1.PlayerRepository(db);
+    const rewardService = new reward_service_1.RewardService(db);
+    const leaderboardService = new leaderboard_service_1.LeaderboardService(db);
+    return new event_processor_1.EventProcessor(eventRepository, taskRepository, missionRepository, playerRepository, rewardService, leaderboardService);
+}
 // Create the events router
 exports.eventRoutes = new hono_1.Hono();
 // Define event payload schema for validation
 const eventPayloadSchema = zod_1.z.object({
     event: zod_1.z.string().min(1),
-    store_id: zod_1.z.number().int().positive(),
+    player_id: zod_1.z.number().int().positive(),
+    game_id: zod_1.z.number().int().positive(),
     timestamp: zod_1.z.string().optional(),
     properties: zod_1.z.record(zod_1.z.any()).optional(),
     user_properties: zod_1.z.record(zod_1.z.any()).optional()
@@ -26,18 +41,17 @@ exports.eventRoutes.post('/', (0, zod_validator_1.zValidator)('json', eventPaylo
         const db = c.get('db');
         const eventData = c.req.valid('json');
         // Create event processor and process the event
-        const eventProcessor = new event_processor_1.EventProcessorService(db);
+        const eventProcessor = createEventProcessor(db);
         const result = await eventProcessor.processEvent(eventData);
         return c.json({
-            success: true,
-            message: 'Event processed successfully',
-            data: {
-                event: eventData.event,
-                store_id: eventData.store_id,
-                task_updates: result.taskUpdates || [],
-                mission_updates: result.missionUpdates || [],
-                reward_updates: result.rewardUpdates || []
-            }
+            success: result.success,
+            message: result.message,
+            event: result.event,
+            playerId: result.playerId,
+            gameId: result.gameId,
+            taskUpdates: result.taskUpdates || [],
+            missionUpdates: result.missionUpdates || [],
+            rewardUpdates: result.rewardUpdates || []
         });
     }
     catch (error) {
@@ -129,6 +143,7 @@ exports.eventRoutes.post('/register', (0, zod_validator_1.zValidator)('json', cr
                 message: 'Event with this name already exists'
             }, 409);
         }
+        // Create the event
         const result = await db.insert(schema_1.events).values({
             name: data.name,
             description: data.description
@@ -157,11 +172,7 @@ const iterationConfirmationSchema = zod_1.z.object({
  */
 exports.eventRoutes.post('/confirm-iteration', (0, zod_validator_1.zValidator)('json', iterationConfirmationSchema), async (c) => {
     try {
-        const db = c.get('db');
         const { confirm } = c.req.valid('json');
-        // Create event processor and set iteration confirmation
-        const eventProcessor = new event_processor_1.EventProcessorService(db);
-        eventProcessor.setIterationConfirmation(confirm);
         return c.json({
             success: true,
             message: confirm
@@ -186,14 +197,10 @@ exports.eventRoutes.post('/confirm-iteration', (0, zod_validator_1.zValidator)('
  */
 exports.eventRoutes.get('/iteration-status', async (c) => {
     try {
-        const db = c.get('db');
-        // Create event processor and get iteration status
-        const eventProcessor = new event_processor_1.EventProcessorService(db);
-        const iterationConfirmed = eventProcessor.askForIterationConfirmation();
         return c.json({
             success: true,
             data: {
-                iterationConfirmed
+                iterationConfirmed: false
             }
         });
     }
@@ -203,5 +210,54 @@ exports.eventRoutes.get('/iteration-status', async (c) => {
             success: false,
             message: error.message || 'Failed to retrieve iteration status',
         }, 500);
+    }
+});
+/**
+ * POST /api/events/segment
+ * Handle Segment events
+ */
+exports.eventRoutes.post('/segment', async (c) => {
+    try {
+        const payload = await c.req.json();
+        if (!payload) {
+            return c.json({ error: 'No payload provided' }, 400);
+        }
+        if (!payload.event || !payload.event.name) {
+            return c.json({ error: 'Invalid event format: missing event name' }, 400);
+        }
+        // Initialize event processor
+        const db = c.get('db');
+        const eventProcessor = createEventProcessor(db);
+        // Process the event
+        const result = await eventProcessor.processEvent(payload);
+        // Return the result
+        return c.json(result, result.success ? 200 : 400);
+    }
+    catch (error) {
+        console.error('Error processing event:', error);
+        return c.json({ error: 'Failed to process event' }, 500);
+    }
+});
+/**
+ * POST /api/events/jitsu
+ * Handle Jitsu events
+ */
+exports.eventRoutes.post('/jitsu', async (c) => {
+    try {
+        const payload = await c.req.json();
+        if (!payload) {
+            return c.json({ error: 'No payload provided' }, 400);
+        }
+        // Initialize services
+        const db = c.get('db');
+        const eventProcessor = createEventProcessor(db);
+        // Process the event
+        const result = await eventProcessor.processEvent(payload);
+        // Return the result
+        return c.json(result, result.success ? 200 : 400);
+    }
+    catch (error) {
+        console.error('Error processing Jitsu event:', error);
+        return c.json({ error: 'Failed to process event' }, 500);
     }
 });

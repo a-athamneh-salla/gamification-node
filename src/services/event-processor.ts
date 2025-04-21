@@ -1,270 +1,187 @@
-import { DB } from '../db';
-import { EventRepository } from '../repositories/event-repository';
+import {
+  EventPayload,
+  SallaEvent,
+  EventProcessingResult,
+  TaskOperationResult,
+  MissionOperationResult,
+  RewardOperationResult,
+  IRewardService,
+  MissionStatus
+} from '../types';
 import { TaskRepository } from '../repositories/task-repository';
 import { MissionRepository } from '../repositories/mission-repository';
-import { eventLogs, storeMissionProgress } from '../db/schema';
-import { eq, and } from 'drizzle-orm';
-import { EventPayload, MissionStatus } from '../types';
+import { PlayerRepository } from '../repositories/player-repository';
+import { EventRepository } from '../repositories/event-repository';
+import { LeaderboardService } from '../services/leaderboard-service';
 
 /**
- * Event Processor Service
- * Handles processing incoming events, updating task completion and mission progress
+ * Service for processing incoming events and updating tasks
  */
-export class EventProcessorService {
-  private db: DB;
-  private eventRepository: EventRepository;
-  private taskRepository: TaskRepository;
-  private missionRepository: MissionRepository;
-  private iterationConfirmed: boolean = true; // Default to true to ensure backward compatibility
+export class EventProcessor {
+  private rewardService: IRewardService;
+  private leaderboardService?: LeaderboardService;
 
-  constructor(db: DB) {
-    this.db = db;
-    this.eventRepository = new EventRepository(db);
-    this.taskRepository = new TaskRepository(db);
-    this.missionRepository = new MissionRepository(db);
-  }
-
-  /**
-   * Sets the iteration confirmation flag
-   * @param confirmed Whether iteration should continue
-   */
-  setIterationConfirmation(confirmed: boolean): void {
-    this.iterationConfirmed = confirmed;
-  }
-
-  /**
-   * Asks for confirmation to continue iteration
-   * @returns Current state of iteration confirmation
-   */
-  askForIterationConfirmation(): boolean {
-    return this.iterationConfirmed;
-  }
-
-  /**
-   * Resets the iteration confirmation flag to default (true)
-   */
-  resetIterationConfirmation(): void {
-    this.iterationConfirmed = true;
+  constructor(
+    private eventRepo: EventRepository,
+    private taskRepo: TaskRepository,
+    private missionRepo: MissionRepository,
+    private playerRepo: PlayerRepository,
+    rewardService: IRewardService,
+    leaderboardService?: LeaderboardService
+  ) {
+    this.rewardService = rewardService;
+    this.leaderboardService = leaderboardService;
   }
 
   /**
    * Process an incoming event
-   * @param payload Event payload
-   * @returns Object with arrays of completed task IDs and mission IDs
+   * @param event The event to process
+   * @returns Processing result including tasks and missions updated
    */
-  async processEvent(payload: EventPayload): Promise<{
-    tasks_completed: string[];
-    missions_completed: string[];
-    taskUpdates?: any[];
-    missionUpdates?: any[];
-    rewardUpdates?: any[];
-  }> {
-    // If iteration confirmation is required and hasn't been confirmed, return early
-    if (!this.iterationConfirmed) {
-      return { 
-        tasks_completed: [], 
-        missions_completed: [],
-        taskUpdates: [],
-        missionUpdates: [],
-        rewardUpdates: []
-      };
-    }
-
+  async processEvent(event: SallaEvent | EventPayload): Promise<EventProcessingResult> {
     try {
-      // Log the event
-      const eventLog = await this.logEvent(payload);
+      // Normalize input to SallaEvent format
+      const normalizedEvent: SallaEvent = this.normalizeEvent(event);
       
-      // Find the event in our database
-      const event = await this.eventRepository.findByName(payload.event);
-      if (!event) {
-        throw new Error(`Event "${payload.event}" is not registered in the system`);
-      }
-
-      // Find tasks associated with this event
-      const tasks = await this.taskRepository.findByEventId(event.id);
-      if (!tasks.length) {
-        return { 
-          tasks_completed: [], 
-          missions_completed: [],
-          taskUpdates: [],
-          missionUpdates: [],
-          rewardUpdates: [] 
-        };
-      }
-
-      const completedTaskIds: string[] = [];
-      const completedMissionIds = new Set<string>();
-
-      // Process tasks and update their completion status
+      // Get or create player for this store
+      const player = await this.playerRepo.getOrCreatePlayer(normalizedEvent.storeId);
+      
+      // Find tasks associated with this event type
+      const tasks = await this.taskRepo.findByEventType(normalizedEvent.type);
+      
+      let tasksUpdated = 0;
+      let missionsUpdated = 0;
+      const taskUpdates: TaskOperationResult[] = [];
+      const missionUpdates: MissionOperationResult[] = [];
+      const rewardUpdates: RewardOperationResult[] = [];
+      const missionsAffected = new Set<number>();
+      
+      // Process each task and update progress
       for (const task of tasks) {
-        // Check if task is already completed for this store
-        const taskWithProgress = await this.taskRepository.findByIdForStore(
-          payload.store_id,
-          task.id
+        // Update task progress
+        const updatedTask = await this.taskRepo.updateProgress(
+          task.id,
+          player.id,
+          'completed'
         );
-
-        if (taskWithProgress?.status !== 'completed') {
-          // Update task progress to completed
-          await this.taskRepository.updateProgress(
-            payload.store_id,
-            task.id,
-            'completed'
+        
+        if (updatedTask) {
+          tasksUpdated++;
+          taskUpdates.push({
+            success: true,
+            message: 'Task updated successfully',
+            taskId: task.id,
+            taskStatus: 'completed'
+          });
+          
+          missionsAffected.add(task.missionId);
+          
+          // Check if all tasks in the mission are completed
+          const allMissionTasks = await this.taskRepo.findByMission(task.missionId);
+          const completedTasks = await this.taskRepo.findAllCompletedTasksByMission(
+            task.missionId, 
+            player.id
           );
-          completedTaskIds.push(task.id.toString());
-
+          
           // Update mission progress
-          const mission = await this.missionRepository.findByIdForStore(
-            payload.store_id,
-            task.missionId
+          const progress = Math.floor((completedTasks.length / allMissionTasks.length) * 100);
+          const isCompleted = progress === 100;
+          
+          const status = isCompleted ? 'completed' : 'in_progress';
+          
+          // Update mission progress
+          const updatedMission = await this.missionRepo.updateProgress(
+            task.missionId,
+            player.id,
+            status,
+            progress
           );
-
-          if (mission) {
-            // Check if all required tasks are completed
-            const tasks = mission.tasks || [];
-            const completedTasks = tasks.filter(
-              (t: any) => t.status === 'completed' || t.isOptional
-            );
-
-            // Calculate points earned
-            const pointsEarned = tasks.reduce((sum: number, t: any) => {
-              if (t.status === 'completed') {
-                return sum + t.points;
+          
+          if (updatedMission) {
+            missionsUpdated++;
+            missionUpdates.push({
+              success: true,
+              message: `Mission ${isCompleted ? 'completed' : 'updated'} successfully`,
+              missionId: task.missionId,
+              missionStatus: status as MissionStatus,
+              tasksCompleted: completedTasks.length,
+              tasksTotal: allMissionTasks.length
+            });
+            
+            // If mission is completed, grant rewards
+            if (isCompleted) {
+              const rewards = await this.rewardService.grantRewardsForMission(
+                task.missionId,
+                player.id,
+                normalizedEvent.game_id || player.id // Use game_id if available or fallback to player.id
+              );
+              
+              // Update player's score on the leaderboard if the service is available
+              if (this.leaderboardService && updatedMission.affectsLeaderboard) {
+                const pointsToAdd = updatedMission.leaderboardPoints || 0;
+                await this.leaderboardService.updatePlayerScore(player.id, pointsToAdd);
               }
-              return sum;
-            }, 0);
-
-            // Update mission progress
-            await this.updateMissionProgress(
-              payload.store_id,
-              mission.id,
-              pointsEarned,
-              completedTasks.length === tasks.length ? 'completed' : 'in_progress'
-            );
-
-            // Check if mission was completed by this event
-            if (completedTasks.length === tasks.length) {
-              completedMissionIds.add(mission.id.toString());
+              
+              // Add reward updates
+              rewards.forEach(reward => {
+                rewardUpdates.push({
+                  success: true,
+                  message: `Reward granted: ${reward.name}`,
+                  reward
+                });
+              });
             }
           }
         }
       }
-
-      // Mark the event as processed
-      await this.db
-        .update(eventLogs)
-        .set({ processed: true })
-        .where(eq(eventLogs.id, eventLog.id));
-
+      
+      // Log event
+      await this.eventRepo.logEvent({
+        type: normalizedEvent.type,
+        playerId: player.id,
+        data: JSON.stringify(normalizedEvent.properties),
+        timestamp: normalizedEvent.timestamp
+      });
+      
       return {
-        tasks_completed: completedTaskIds,
-        missions_completed: Array.from(completedMissionIds),
+        success: true,
+        message: `Event processed successfully: ${normalizedEvent.type}`,
+        event: normalizedEvent.type,
+        playerId: player.id,
+        gameId: normalizedEvent.game_id,
+        taskUpdates,
+        missionUpdates,
+        rewardUpdates
+      };
+    } catch (error: any) {
+      console.error('Error processing event:', error);
+      return {
+        success: false,
+        message: error.message || 'Error processing event',
         taskUpdates: [],
         missionUpdates: [],
         rewardUpdates: []
       };
-    } catch (error) {
-      console.error('Error processing event:', error);
-      throw error;
     }
   }
-
+  
   /**
-   * Log an event to the database
-   * @param payload Event payload
-   * @returns The created event log entry
+   * Normalize input event to SallaEvent format
    */
-  private async logEvent(payload: EventPayload): Promise<any> {
-    const event = await this.eventRepository.findByName(payload.event);
-    
-    const result = await this.db
-      .insert(eventLogs)
-      .values({
-        storeId: payload.store_id,
-        eventId: event?.id || 0,
-        payload: JSON.stringify(payload),
-        processed: false
-      })
-      .returning();
-
-    return result[0];
-  }
-
-  /**
-   * Update mission progress for a store
-   * @param storeId Store ID
-   * @param missionId Mission ID
-   * @param pointsEarned Points earned
-   * @param status Mission status
-   * @returns The updated mission progress
-   */
-  private async updateMissionProgress(
-    storeId: number,
-    missionId: number,
-    pointsEarned: number,
-    status: MissionStatus
-  ): Promise<any> {
-    // Check if progress entry exists
-    const existingProgress = await this.db.query.storeMissionProgress.findFirst({
-      where: and(
-        eq(storeMissionProgress.storeId, storeId),
-        eq(storeMissionProgress.missionId, missionId)
-      )
-    });
-    
-    const now = new Date().toISOString();
-    
-    if (existingProgress) {
-      // Update existing progress
-      const result = await this.db
-        .update(storeMissionProgress)
-        .set({
-          pointsEarned,
-          status,
-          completedAt: status === 'completed' ? now : existingProgress.completedAt,
-          updatedAt: now
-        })
-        .where(
-          and(
-            eq(storeMissionProgress.storeId, storeId),
-            eq(storeMissionProgress.missionId, missionId)
-          )
-        )
-        .returning();
-      
-      return result[0];
-    } else {
-      // Create new progress entry
-      const result = await this.db
-        .insert(storeMissionProgress)
-        .values({
-          storeId,
-          missionId,
-          status,
-          pointsEarned,
-          startedAt: now,
-          completedAt: status === 'completed' ? now : undefined
-        })
-        .returning();
-      
-      return result[0];
+  private normalizeEvent(event: SallaEvent | EventPayload): SallaEvent {
+    if ('storeId' in event) {
+      return event as SallaEvent;
     }
-  }
-
-  /**
-   * Check if the current iteration should continue
-   * @param shouldContinue Boolean indicating whether to continue iteration
-   * @returns True if the iteration is confirmed to continue, false otherwise
-   */
-  public confirmIteration(shouldContinue: boolean): boolean {
-    this.iterationConfirmed = shouldContinue;
-    return this.iterationConfirmed;
-  }
-
-  /**
-   * Get the current iteration confirmation status
-   * @returns True if the system is set to continue iterations, false otherwise
-   */
-  public isIterationConfirmed(): boolean {
-    return this.iterationConfirmed;
+    
+    // Convert EventPayload to SallaEvent
+    return {
+      storeId: event.player_id,
+      type: event.event,
+      timestamp: new Date().toISOString(),
+      properties: event.event_data || {},
+      player_id: event.player_id,
+      game_id: event.game_id,
+      merchant: event.merchant
+    };
   }
 }

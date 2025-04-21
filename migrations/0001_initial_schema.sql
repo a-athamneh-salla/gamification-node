@@ -1,6 +1,31 @@
 -- Initial Schema for Salla Gamification System
 -- Migration: 0001_initial_schema
 
+-- Games table
+CREATE TABLE IF NOT EXISTS games (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  start_date TEXT,
+  end_date TEXT,
+  target_type TEXT NOT NULL DEFAULT 'all',
+  target_players TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Players table
+CREATE TABLE IF NOT EXISTS players (
+  id INTEGER PRIMARY KEY,
+  external_id TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  email TEXT,
+  metadata TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Events table
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY,
@@ -13,6 +38,7 @@ CREATE TABLE IF NOT EXISTS events (
 -- Missions table
 CREATE TABLE IF NOT EXISTS missions (
   id INTEGER PRIMARY KEY,
+  game_id INTEGER NOT NULL,
   name TEXT NOT NULL,
   description TEXT,
   points_required INTEGER NOT NULL DEFAULT 0,
@@ -23,9 +49,10 @@ CREATE TABLE IF NOT EXISTS missions (
   recurrence_pattern TEXT,
   prerequisite_mission_id INTEGER,
   target_type TEXT NOT NULL DEFAULT 'all',
-  target_stores TEXT,
+  target_players TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (game_id) REFERENCES games (id),
   FOREIGN KEY (prerequisite_mission_id) REFERENCES missions (id)
 );
 
@@ -68,10 +95,11 @@ CREATE TABLE IF NOT EXISTS rewards (
   FOREIGN KEY (reward_type_id) REFERENCES reward_types (id)
 );
 
--- Store mission progress table
-CREATE TABLE IF NOT EXISTS store_mission_progress (
+-- Player mission progress table
+CREATE TABLE IF NOT EXISTS player_mission_progress (
   id INTEGER PRIMARY KEY,
-  store_id INTEGER NOT NULL,
+  player_id INTEGER NOT NULL,
+  game_id INTEGER NOT NULL,
   mission_id INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'not_started',
   points_earned INTEGER NOT NULL DEFAULT 0,
@@ -80,13 +108,15 @@ CREATE TABLE IF NOT EXISTS store_mission_progress (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (mission_id) REFERENCES missions (id),
-  UNIQUE (store_id, mission_id)
+  FOREIGN KEY (game_id) REFERENCES games (id),
+  UNIQUE (player_id, game_id, mission_id)
 );
 
--- Store task progress table
-CREATE TABLE IF NOT EXISTS store_task_progress (
+-- Player task progress table
+CREATE TABLE IF NOT EXISTS player_task_progress (
   id INTEGER PRIMARY KEY,
-  store_id INTEGER NOT NULL,
+  player_id INTEGER NOT NULL,
+  game_id INTEGER NOT NULL,
   task_id INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'not_started',
   completed_at TEXT,
@@ -94,13 +124,15 @@ CREATE TABLE IF NOT EXISTS store_task_progress (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (task_id) REFERENCES tasks (id),
-  UNIQUE (store_id, task_id)
+  FOREIGN KEY (game_id) REFERENCES games (id),
+  UNIQUE (player_id, game_id, task_id)
 );
 
--- Store rewards table
-CREATE TABLE IF NOT EXISTS store_rewards (
+-- Player rewards table
+CREATE TABLE IF NOT EXISTS player_rewards (
   id INTEGER PRIMARY KEY,
-  store_id INTEGER NOT NULL,
+  player_id INTEGER NOT NULL,
+  game_id INTEGER NOT NULL,
   reward_id INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'earned',
   earned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -109,36 +141,42 @@ CREATE TABLE IF NOT EXISTS store_rewards (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (reward_id) REFERENCES rewards (id),
-  UNIQUE (store_id, reward_id)
+  FOREIGN KEY (game_id) REFERENCES games (id),
+  UNIQUE (player_id, game_id, reward_id)
 );
 
 -- Event logs table
 CREATE TABLE IF NOT EXISTS event_logs (
   id INTEGER PRIMARY KEY,
-  store_id INTEGER NOT NULL,
+  player_id INTEGER NOT NULL,
+  game_id INTEGER NOT NULL,
   event_id INTEGER NOT NULL,
   payload TEXT,
   processed INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (event_id) REFERENCES events (id)
+  FOREIGN KEY (event_id) REFERENCES events (id),
+  FOREIGN KEY (game_id) REFERENCES games (id)
 );
 
 -- Leaderboard table
 CREATE TABLE IF NOT EXISTS leaderboard (
   id INTEGER PRIMARY KEY,
-  store_id INTEGER NOT NULL UNIQUE,
+  player_id INTEGER NOT NULL,
+  game_id INTEGER NOT NULL,
   total_points INTEGER NOT NULL DEFAULT 0,
   completed_missions INTEGER NOT NULL DEFAULT 0,
   completed_tasks INTEGER NOT NULL DEFAULT 0,
   rank INTEGER,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (game_id) REFERENCES games (id),
+  UNIQUE (player_id, game_id)
 );
 
 -- Insert default reward types
 INSERT INTO reward_types (id, name, description) VALUES 
-(1, 'badge', 'Achievement badges displayed on merchant profile'),
+(1, 'badge', 'Achievement badges displayed on player profile'),
 (2, 'coupon', 'Discount coupons for Salla services'),
 (3, 'subscription', 'Free subscription period or tier upgrade'),
 (4, 'feature', 'Early access to new platform features');
@@ -148,7 +186,11 @@ CREATE INDEX idx_events_name ON events(name);
 CREATE INDEX idx_tasks_event_id ON tasks(event_id);
 CREATE INDEX idx_tasks_mission_id ON tasks(mission_id);
 CREATE INDEX idx_missions_active ON missions(is_active);
-CREATE INDEX idx_store_mission_status ON store_mission_progress(store_id, status);
-CREATE INDEX idx_store_task_status ON store_task_progress(store_id, status);
+CREATE INDEX idx_missions_game_id ON missions(game_id);
+CREATE INDEX idx_player_mission_status ON player_mission_progress(player_id, status);
+CREATE INDEX idx_player_mission_game ON player_mission_progress(game_id);
+CREATE INDEX idx_player_task_status ON player_task_progress(player_id, status);
+CREATE INDEX idx_player_task_game ON player_task_progress(game_id);
 CREATE INDEX idx_leaderboard_points ON leaderboard(total_points DESC);
-CREATE INDEX idx_event_logs_processed ON event_logs(processed);
+CREATE INDEX idx_leaderboard_game ON leaderboard(game_id);
+CREATE INDEX idx_event_logs_player_game ON event_logs(player_id, game_id);

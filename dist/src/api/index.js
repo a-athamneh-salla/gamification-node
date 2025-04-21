@@ -10,6 +10,8 @@ const tasks_1 = require("./tasks");
 const rewards_1 = require("./rewards");
 const leaderboard_1 = require("./leaderboard");
 const events_1 = require("./events");
+const games_1 = require("./games");
+const players_1 = require("./players");
 // Create the main API router
 const api = new hono_1.Hono();
 exports.api = api;
@@ -35,6 +37,8 @@ api.get('/', (c) => {
 });
 // Register API routes
 api.route('/events', events_1.eventRoutes);
+api.route('/games', games_1.gameRoutes);
+api.route('/players', players_1.playerRoutes);
 api.route('/missions', missions_1.missionRoutes);
 api.route('/tasks', tasks_1.taskRoutes);
 api.route('/rewards', rewards_1.rewardRoutes);

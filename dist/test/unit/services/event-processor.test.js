@@ -4,261 +4,157 @@ const event_processor_1 = require("../../../src/services/event-processor");
 const event_repository_1 = require("../../../src/repositories/event-repository");
 const task_repository_1 = require("../../../src/repositories/task-repository");
 const mission_repository_1 = require("../../../src/repositories/mission-repository");
-// Mock DB and repositories
+const player_repository_1 = require("../../../src/repositories/player-repository");
+const reward_service_1 = require("../../../src/services/reward-service");
+const leaderboard_service_1 = require("../../../src/services/leaderboard-service");
+// Mock repositories
 jest.mock('../../../src/repositories/event-repository');
 jest.mock('../../../src/repositories/task-repository');
 jest.mock('../../../src/repositories/mission-repository');
-describe('EventProcessorService', () => {
-    let eventProcessorService;
-    let mockDb;
+jest.mock('../../../src/repositories/player-repository');
+jest.mock('../../../src/services/reward-service');
+jest.mock('../../../src/services/leaderboard-service');
+describe('EventProcessor', () => {
+    let eventProcessor;
+    let mockEventRepo;
+    let mockTaskRepo;
+    let mockMissionRepo;
+    let mockPlayerRepo;
+    let mockRewardService;
+    let mockLeaderboardService;
+    let mockDB;
     beforeEach(() => {
-        // Reset mocks
-        jest.clearAllMocks();
         // Create mock DB
-        mockDb = {
-            insert: jest.fn().mockReturnValue({
-                values: jest.fn().mockReturnValue({
-                    returning: jest.fn().mockResolvedValue([{ id: 1 }])
-                })
-            }),
-            update: jest.fn().mockReturnValue({
-                set: jest.fn().mockReturnValue({
-                    where: jest.fn().mockReturnValue({
-                        returning: jest.fn().mockResolvedValue([{ id: 1 }])
-                    })
-                })
-            }),
-            query: {
-                storeMissionProgress: {
-                    findFirst: jest.fn().mockResolvedValue(null)
-                }
-            }
-        };
-        // Initialize service with mock DB
-        eventProcessorService = new event_processor_1.EventProcessorService(mockDb);
+        mockDB = {};
+        // Create mocked repositories
+        mockEventRepo = new event_repository_1.EventRepository(mockDB);
+        mockTaskRepo = new task_repository_1.TaskRepository(mockDB);
+        mockMissionRepo = new mission_repository_1.MissionRepository(mockDB);
+        mockPlayerRepo = new player_repository_1.PlayerRepository(mockDB);
+        mockRewardService = new reward_service_1.RewardService(mockDB);
+        mockLeaderboardService = new leaderboard_service_1.LeaderboardService(mockDB);
+        // Create event processor with new constructor signature
+        eventProcessor = new event_processor_1.EventProcessor(mockEventRepo, mockTaskRepo, mockMissionRepo, mockPlayerRepo, mockRewardService, mockLeaderboardService);
     });
     describe('processEvent', () => {
-        it('should process an event and update task and mission progress', async () => {
-            // Mock event payload
-            const payload = {
-                event: 'Product Added',
-                store_id: 123,
-                timestamp: new Date().toISOString()
+        it('should process an event and update tasks', async () => {
+            // Arrange
+            const event = {
+                storeId: 123,
+                type: 'order_create',
+                properties: {
+                    order_id: '12345',
+                    total: 100
+                },
+                timestamp: '2023-01-01T12:00:00Z'
             };
-            // Mock event repository
-            event_repository_1.EventRepository.prototype.findByName.mockResolvedValue({
+            // Mock getting or creating player
+            mockPlayerRepo.getOrCreatePlayer.mockResolvedValue({
                 id: 1,
-                name: 'Product Added',
-                description: 'Product was added to store'
+                externalId: '123',
+                name: 'Test Player',
+                points: 0,
+                totalPoints: 0,
+                tasksCompleted: 0,
+                missionsCompleted: 0,
+                createdAt: '2023-01-01T12:00:00Z',
+                updatedAt: '2023-01-01T12:00:00Z'
             });
-            // Mock tasks related to the event
-            task_repository_1.TaskRepository.prototype.findByEventId.mockResolvedValue([
+            // Mock finding tasks for event - use the correct method name
+            mockTaskRepo.findByEventType.mockResolvedValue([
                 {
                     id: 1,
                     missionId: 1,
-                    eventId: 1,
-                    name: 'Add a Product',
-                    description: 'Add your first product',
-                    points: 25,
+                    eventId: 'order_create',
+                    name: 'Create your first order',
+                    description: 'Create your first order in the store',
+                    points: 10,
                     isOptional: false,
-                    order: 1
+                    isActive: true,
+                    requiredProgress: 1,
+                    order: 1,
+                    createdAt: '2023-01-01T12:00:00Z',
+                    updatedAt: '2023-01-01T12:00:00Z'
                 }
             ]);
-            // Mock task progress check (task not completed yet)
-            task_repository_1.TaskRepository.prototype.findByIdForStore.mockResolvedValue({
+            // Mock task repository update progress
+            mockTaskRepo.updateProgress.mockResolvedValue({
                 id: 1,
                 missionId: 1,
-                eventId: 1,
-                name: 'Add a Product',
-                description: 'Add your first product',
-                points: 25,
+                eventId: 'order_create',
+                name: 'Create your first order',
+                description: 'Create your first order in the store',
+                points: 10,
                 isOptional: false,
-                order: 1,
-                status: 'not_started'
-            });
-            // Mock mission details with tasks
-            mission_repository_1.MissionRepository.prototype.findByIdForStore.mockResolvedValue({
-                id: 1,
-                name: 'Store Setup',
-                description: 'Set up your store',
-                pointsRequired: 100,
                 isActive: true,
-                targetType: 'all',
-                tasks: [
-                    {
-                        id: 1,
-                        missionId: 1,
-                        eventId: 1,
-                        name: 'Add a Product',
-                        description: 'Add your first product',
-                        points: 25,
-                        isOptional: false,
-                        order: 1,
-                        status: 'not_started'
-                    },
-                    {
-                        id: 2,
-                        missionId: 1,
-                        eventId: 2,
-                        name: 'Add a Store Logo',
-                        description: 'Add your store logo',
-                        points: 25,
-                        isOptional: false,
-                        order: 2,
-                        status: 'not_started'
-                    }
-                ]
+                requiredProgress: 1,
+                order: 1,
+                status: 'completed',
+                completedAt: '2023-01-01T12:00:00Z',
+                createdAt: '2023-01-01T12:00:00Z',
+                updatedAt: '2023-01-01T12:00:00Z'
             });
-            // Execute the method
-            const result = await eventProcessorService.processEvent(payload);
-            // Assertions
-            expect(result).toEqual({
-                tasks_completed: ['1'],
-                missions_completed: []
-            });
-            // Verify that task progress was updated
-            expect(task_repository_1.TaskRepository.prototype.updateProgress).toHaveBeenCalledWith(123, 1, 'completed');
-        });
-        it('should handle case when event is not found', async () => {
-            // Mock event payload
-            const payload = {
-                event: 'Unknown Event',
-                store_id: 123,
-                timestamp: new Date().toISOString()
-            };
-            // Mock event repository - event not found
-            event_repository_1.EventRepository.prototype.findByName.mockResolvedValue(null);
-            // Expect it to throw an error
-            await expect(eventProcessorService.processEvent(payload))
-                .rejects
-                .toThrow('Event "Unknown Event" is not registered in the system');
-        });
-        it('should not update already completed tasks', async () => {
-            // Mock event payload
-            const payload = {
-                event: 'Product Added',
-                store_id: 123,
-                timestamp: new Date().toISOString()
-            };
-            // Mock event repository
-            event_repository_1.EventRepository.prototype.findByName.mockResolvedValue({
-                id: 1,
-                name: 'Product Added',
-                description: 'Product was added to store'
-            });
-            // Mock tasks related to the event
-            task_repository_1.TaskRepository.prototype.findByEventId.mockResolvedValue([
+            // Mock mission methods
+            mockTaskRepo.findByMission.mockResolvedValue([
                 {
                     id: 1,
                     missionId: 1,
-                    eventId: 1,
-                    name: 'Add a Product',
-                    description: 'Add your first product',
-                    points: 25,
+                    eventId: 'order_create',
+                    name: 'Create your first order',
+                    description: 'Create your first order in the store',
+                    points: 10,
                     isOptional: false,
-                    order: 1
+                    isActive: true,
+                    requiredProgress: 1,
+                    order: 1,
+                    createdAt: '2023-01-01T12:00:00Z',
+                    updatedAt: '2023-01-01T12:00:00Z'
                 }
             ]);
-            // Mock task progress check (task is already completed)
-            task_repository_1.TaskRepository.prototype.findByIdForStore.mockResolvedValue({
-                id: 1,
-                missionId: 1,
-                eventId: 1,
-                name: 'Add a Product',
-                description: 'Add your first product',
-                points: 25,
-                isOptional: false,
-                order: 1,
-                status: 'completed'
-            });
-            // Execute the method
-            const result = await eventProcessorService.processEvent(payload);
-            // Assertions
-            expect(result).toEqual({
-                tasks_completed: [],
-                missions_completed: []
-            });
-            // Verify that task progress was NOT updated
-            expect(task_repository_1.TaskRepository.prototype.updateProgress).not.toHaveBeenCalled();
-        });
-        it('should mark mission as completed when all tasks are done', async () => {
-            // Mock event payload
-            const payload = {
-                event: 'Product Added',
-                store_id: 123,
-                timestamp: new Date().toISOString()
-            };
-            // Mock event repository
-            event_repository_1.EventRepository.prototype.findByName.mockResolvedValue({
-                id: 1,
-                name: 'Product Added',
-                description: 'Product was added to store'
-            });
-            // Mock tasks related to the event
-            task_repository_1.TaskRepository.prototype.findByEventId.mockResolvedValue([
+            mockTaskRepo.findAllCompletedTasksByMission.mockResolvedValue([
                 {
                     id: 1,
                     missionId: 1,
-                    eventId: 1,
-                    name: 'Add a Product',
-                    description: 'Add your first product',
-                    points: 25,
+                    eventId: 'order_create',
+                    name: 'Create your first order',
+                    description: 'Create your first order in the store',
+                    points: 10,
                     isOptional: false,
-                    order: 1
+                    isActive: true,
+                    requiredProgress: 1,
+                    order: 1,
+                    status: 'completed',
+                    completedAt: '2023-01-01T12:00:00Z',
+                    createdAt: '2023-01-01T12:00:00Z',
+                    updatedAt: '2023-01-01T12:00:00Z'
                 }
             ]);
-            // Mock task progress check (task not completed yet)
-            task_repository_1.TaskRepository.prototype.findByIdForStore.mockResolvedValue({
+            mockMissionRepo.updateProgress.mockResolvedValue({
                 id: 1,
-                missionId: 1,
-                eventId: 1,
-                name: 'Add a Product',
-                description: 'Add your first product',
-                points: 25,
-                isOptional: false,
-                order: 1,
-                status: 'not_started'
-            });
-            // Mock mission details - all other tasks already completed
-            mission_repository_1.MissionRepository.prototype.findByIdForStore.mockResolvedValue({
-                id: 1,
-                name: 'Store Setup',
-                description: 'Set up your store',
-                pointsRequired: 50,
+                gameId: 1,
+                name: 'Getting Started',
+                description: 'Complete initial store setup',
+                pointsRequired: 10,
                 isActive: true,
+                isRecurring: false,
                 targetType: 'all',
-                tasks: [
-                    {
-                        id: 1,
-                        missionId: 1,
-                        eventId: 1,
-                        name: 'Add a Product',
-                        description: 'Add your first product',
-                        points: 25,
-                        isOptional: false,
-                        order: 1,
-                        status: 'not_started' // Will be marked completed by the event
-                    },
-                    {
-                        id: 2,
-                        missionId: 1,
-                        eventId: 2,
-                        name: 'Add a Store Logo',
-                        description: 'Add your store logo',
-                        points: 25,
-                        isOptional: false,
-                        order: 2,
-                        status: 'completed' // Already completed
-                    }
-                ]
+                status: 'completed',
+                progress: 100,
+                completedAt: '2023-01-01T12:00:00Z',
+                createdAt: '2023-01-01T12:00:00Z',
+                updatedAt: '2023-01-01T12:00:00Z',
+                affectsLeaderboard: true,
+                leaderboardPoints: 50
             });
-            // Execute the method
-            const result = await eventProcessorService.processEvent(payload);
-            // Assertions
-            expect(result).toEqual({
-                tasks_completed: ['1'],
-                missions_completed: ['1']
-            });
+            mockRewardService.grantRewardsForMission.mockResolvedValue([]);
+            mockEventRepo.logEvent.mockResolvedValue({});
+            // Act
+            const result = await eventProcessor.processEvent(event);
+            // Assert
+            expect(mockPlayerRepo.getOrCreatePlayer).toHaveBeenCalledWith(123);
+            expect(mockTaskRepo.findByEventType).toHaveBeenCalledWith('order_create');
+            expect(mockTaskRepo.updateProgress).toHaveBeenCalledWith(1, 1, 'completed');
+            expect(result.success).toBe(true);
         });
     });
 });

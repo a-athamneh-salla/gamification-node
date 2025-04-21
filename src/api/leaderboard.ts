@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { LeaderboardService } from '../services/leaderboard-service';
+import { LeaderboardRepository } from '../repositories/leaderboard-repository';
 import { DB } from '../db';
 
 // Create the leaderboard router
@@ -10,17 +10,29 @@ export const leaderboardRoutes = new Hono<{
 }>();
 
 /**
- * GET /api/leaderboard
- * Get the global leaderboard with pagination
+ * GET /api/leaderboard/:gameId
+ * Get leaderboard for a specific game
  */
-leaderboardRoutes.get('/', async (c) => {
+leaderboardRoutes.get('/:gameId', async (c) => {
   try {
     const db = c.get('db');
+    const gameId = parseInt(c.req.param('gameId'));
     const page = parseInt(c.req.query('page') || '1');
     const limit = parseInt(c.req.query('limit') || '10');
     
-    const leaderboardService = new LeaderboardService(db);
-    const { entries, total } = await leaderboardService.getLeaderboard(page, limit);
+    if (isNaN(gameId)) {
+      return c.json({
+        success: false,
+        message: 'Invalid game ID'
+      }, 400);
+    }
+    
+    const leaderboardRepository = new LeaderboardRepository(db);
+    const { entries, total } = await leaderboardRepository.getGameLeaderboard(
+      gameId, 
+      page, 
+      limit
+    );
     
     return c.json({
       success: true,
@@ -43,105 +55,168 @@ leaderboardRoutes.get('/', async (c) => {
 });
 
 /**
- * GET /api/leaderboard/store/:id
- * Get a specific store's position in the leaderboard with context
+ * GET /api/leaderboard/:gameId/stats
+ * Get statistics about the leaderboard for a game
  */
-leaderboardRoutes.get('/store/:id', async (c) => {
+leaderboardRoutes.get('/:gameId/stats', async (c) => {
   try {
     const db = c.get('db');
-    const storeId = parseInt(c.req.param('id'));
-    const context = parseInt(c.req.query('context') || '2'); // Number of stores to show before and after
+    const gameId = parseInt(c.req.param('gameId'));
     
-    if (isNaN(storeId)) {
+    if (isNaN(gameId)) {
       return c.json({
         success: false,
-        message: 'Invalid store ID'
+        message: 'Invalid game ID'
       }, 400);
     }
     
-    const leaderboardService = new LeaderboardService(db);
-    const result = await leaderboardService.getLeaderboardPositionWithContext(storeId, context);
-    
-    if (!result.storePosition) {
-      return c.json({
-        success: false,
-        message: 'Store not found in leaderboard'
-      }, 404);
-    }
-    
-    return c.json({
-      success: true,
-      data: {
-        store: result.storePosition,
-        context: {
-          above: result.storesAbove,
-          below: result.storesBelow
-        },
-        total_stores: result.totalStores
-      }
-    });
-  } catch (error: any) {
-    console.error('Error retrieving store position:', error);
-    
-    return c.json({
-      success: false,
-      message: error.message || 'Failed to retrieve store position',
-    }, 500);
-  }
-});
-
-/**
- * GET /api/leaderboard/status
- * Get overall statistics for the leaderboard
- */
-leaderboardRoutes.get('/status', async (c) => {
-  try {
-    const db = c.get('db');
-    
-    const leaderboardService = new LeaderboardService(db);
-    const stats = await leaderboardService.getLeaderboardStatistics();
+    const leaderboardRepository = new LeaderboardRepository(db);
+    const stats = await leaderboardRepository.getLeaderboardStats(gameId);
     
     return c.json({
       success: true,
       data: stats
     });
   } catch (error: any) {
-    console.error('Error retrieving leaderboard statistics:', error);
+    console.error('Error retrieving leaderboard stats:', error);
     
     return c.json({
       success: false,
-      message: error.message || 'Failed to retrieve leaderboard statistics',
+      message: error.message || 'Failed to retrieve leaderboard stats',
     }, 500);
   }
 });
 
 /**
- * POST /api/leaderboard/recalculate
- * Force a recalculation of the leaderboard (admin only)
+ * GET /api/leaderboard/:gameId/top/:count
+ * Get top players for a game
  */
-leaderboardRoutes.post('/recalculate', async (c) => {
+leaderboardRoutes.get('/:gameId/top/:count', async (c) => {
   try {
     const db = c.get('db');
+    const gameId = parseInt(c.req.param('gameId'));
+    const count = parseInt(c.req.param('count') || '10');
     
-    // This would typically have authentication/authorization checks
-    // to ensure only admin users can recalculate the leaderboard
+    if (isNaN(gameId)) {
+      return c.json({
+        success: false,
+        message: 'Invalid game ID'
+      }, 400);
+    }
     
-    const leaderboardService = new LeaderboardService(db);
-    const result = await leaderboardService.recalculateLeaderboard();
+    if (isNaN(count) || count < 1) {
+      return c.json({
+        success: false,
+        message: 'Invalid count parameter'
+      }, 400);
+    }
+    
+    const leaderboardRepository = new LeaderboardRepository(db);
+    const topPlayers = await leaderboardRepository.getTopPlayers(gameId, count);
     
     return c.json({
       success: true,
-      message: 'Leaderboard recalculated successfully',
-      data: {
-        stores_updated: result.storesUpdated
-      }
+      data: topPlayers
     });
   } catch (error: any) {
-    console.error('Error recalculating leaderboard:', error);
+    console.error('Error retrieving top players:', error);
     
     return c.json({
       success: false,
-      message: error.message || 'Failed to recalculate leaderboard',
+      message: error.message || 'Failed to retrieve top players',
+    }, 500);
+  }
+});
+
+/**
+ * GET /api/leaderboard/:gameId/player/:playerId
+ * Get a specific player's rank and nearby players
+ */
+leaderboardRoutes.get('/:gameId/player/:playerId', async (c) => {
+  try {
+    const db = c.get('db');
+    const gameId = parseInt(c.req.param('gameId'));
+    const playerId = parseInt(c.req.param('playerId'));
+    const range = parseInt(c.req.query('range') || '3');
+    
+    if (isNaN(gameId)) {
+      return c.json({
+        success: false,
+        message: 'Invalid game ID'
+      }, 400);
+    }
+    
+    if (isNaN(playerId)) {
+      return c.json({
+        success: false,
+        message: 'Invalid player ID'
+      }, 400);
+    }
+    
+    const leaderboardRepository = new LeaderboardRepository(db);
+    const playerRank = await leaderboardRepository.getPlayerRanking(playerId, gameId);
+    
+    if (!playerRank) {
+      return c.json({
+        success: false,
+        message: 'Player not found on leaderboard'
+      }, 404);
+    }
+    
+    const nearbyPlayers = await leaderboardRepository.getNearbyPlayers(playerId, gameId, range);
+    
+    return c.json({
+      success: true,
+      data: {
+        player: playerRank,
+        nearby: nearbyPlayers
+      }
+    });
+  } catch (error: any) {
+    console.error('Error retrieving player ranking:', error);
+    
+    return c.json({
+      success: false,
+      message: error.message || 'Failed to retrieve player ranking',
+    }, 500);
+  }
+});
+
+/**
+ * POST /api/leaderboard/:gameId/recalculate
+ * Recalculate ranks for a game's leaderboard (admin only)
+ */
+leaderboardRoutes.post('/:gameId/recalculate', async (c) => {
+  try {
+    const db = c.get('db');
+    const gameId = parseInt(c.req.param('gameId'));
+    
+    if (isNaN(gameId)) {
+      return c.json({
+        success: false,
+        message: 'Invalid game ID'
+      }, 400);
+    }
+    
+    // This would typically have authentication/authorization checks
+    // to ensure only admin users can trigger recalculation
+    
+    const leaderboardRepository = new LeaderboardRepository(db);
+    const updatedCount = await leaderboardRepository.recalculateRanks(gameId);
+    
+    return c.json({
+      success: true,
+      message: 'Leaderboard ranks recalculated successfully',
+      data: {
+        updatedEntries: updatedCount
+      }
+    });
+  } catch (error: any) {
+    console.error('Error recalculating leaderboard ranks:', error);
+    
+    return c.json({
+      success: false,
+      message: error.message || 'Failed to recalculate leaderboard ranks',
     }, 500);
   }
 });
